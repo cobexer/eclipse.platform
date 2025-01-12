@@ -45,6 +45,7 @@ import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.layout.TabFolderLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
@@ -124,9 +125,9 @@ public class ComparePreferencePage extends PreferencePage implements IWorkbenchP
 
 
 	private IPropertyChangeListener fPreferenceChangeListener;
-	private List<CompareConfiguration> fCompareConfigurations = new ArrayList<>();
+	private final List<CompareConfiguration> fCompareConfigurations = new ArrayList<>();
 	private OverlayPreferenceStore fOverlayStore;
-	private Map<Button, String> fCheckBoxes = new HashMap<>();
+	private final Map<Button, String> fCheckBoxes = new HashMap<>();
 	private Text fFilters;
 	private Text addedLinesRegex;
 	private Text removedLinesRegex;
@@ -153,7 +154,7 @@ public class ComparePreferencePage extends PreferencePage implements IWorkbenchP
 		new OverlayPreferenceStore.OverlayKey(OverlayPreferenceStore.STRING, ICompareUIConstants.PREF_NAVIGATION_END_ACTION_LOCAL),
 		new OverlayPreferenceStore.OverlayKey(OverlayPreferenceStore.BOOLEAN, SWAPPED),
 	};
-	private List<FieldEditor> editors = new ArrayList<>();
+	private final List<FieldEditor> editors = new ArrayList<>();
 	private CTabItem fTextCompareTab;
 	private Button fDisableCappingCheckBox;
 

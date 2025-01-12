@@ -13,76 +13,100 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import java.io.*;
+import static java.util.function.Predicate.not;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInFileSystem;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.removeFromFileSystem;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.removeFromWorkspace;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.IOException;
 import java.util.Date;
 import org.eclipse.core.internal.localstore.SafeChunkyInputStream;
 import org.eclipse.core.internal.localstore.SafeChunkyOutputStream;
 import org.eclipse.core.internal.resources.Workspace;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.tests.internal.localstore.LocalStoreTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class LocalStoreRegressionTests extends LocalStoreTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class LocalStoreRegressionTests {
 
 	/**
 	 * 1FU4PJA: ITPCORE:ALL - refreshLocal for new file with depth zero doesn't work
 	 */
+	@Test
 	public void test_1FU4PJA() throws Throwable {
-		/* initialize common objects */
-		IProject project = projects[0];
+		IProject project = getWorkspace().getRoot().getProject("Test");
+		createInWorkspace(project);
 
 		/* */
 		IFile file = project.getFile("file");
-		ensureExistsInFileSystem(file);
-		assertTrue("1.0", !file.exists());
+		createInFileSystem(file);
+		assertThat(file).matches(not(IFile::exists), "not exists");
 		file.refreshLocal(IResource.DEPTH_ZERO, null);
-		assertTrue("1.1", file.exists());
+		assertThat(file).matches(IFile::exists, "exists");
 	}
 
 	/**
 	 * From: 1FU4TW7: ITPCORE:ALL - Behaviour not specified for refreshLocal when parent doesn't exist
 	 */
+	@Test
 	public void test_1FU4TW7() throws Throwable {
-		IFolder folder = projects[0].getFolder("folder");
+		IProject project = getWorkspace().getRoot().getProject("Test");
+		createInWorkspace(project);
+
+		IFolder folder = project.getFolder("folder");
 		IFile file = folder.getFile("file");
-		ensureExistsInFileSystem(folder);
-		ensureExistsInFileSystem(file);
+		createInFileSystem(folder);
+		createInFileSystem(file);
 		file.refreshLocal(IResource.DEPTH_INFINITE, null);
-		assertTrue("1.1", folder.exists());
-		assertTrue("1.2", file.exists());
-		ensureDoesNotExistInWorkspace(folder);
-		ensureDoesNotExistInFileSystem(folder);
+		assertThat(folder).matches(IFolder::exists, "exists");
+		assertThat(file).matches(IFile::exists, "exists");
+		removeFromWorkspace(folder);
+		removeFromFileSystem(folder);
 	}
 
 	/**
 	 * The PR reported a problem with longs, but we are testing more types here.
 	 */
-	public void test_1G65KR1() {
+	@Test
+	public void test_1G65KR1() throws IOException {
 		/* evaluate test environment */
 		IPath root = getWorkspace().getRoot().getLocation().append("" + new Date().getTime());
-		deleteOnTearDown(root);
 		File temp = root.toFile();
 		temp.mkdirs();
 
 		File target = new File(temp, "target");
 		Workspace.clear(target); // make sure there was nothing here before
-		assertTrue("1.0", !target.exists());
+		assertThat(target).matches(not(File::exists), "not exists");
 
-		// write chunks
-		try (SafeChunkyOutputStream output = new SafeChunkyOutputStream(target);
-				DataOutputStream dos = new DataOutputStream(output)) {
-			dos.writeLong(1234567890l);
-			output.succeed();
-		} catch (IOException e) {
-			fail("2.0", e);
-		}
+		try {
+			// write chunks
+			try (SafeChunkyOutputStream output = new SafeChunkyOutputStream(target);
+					DataOutputStream dos = new DataOutputStream(output)) {
+				dos.writeLong(1234567890l);
+				output.succeed();
+			}
 
-		// read chunks
-		try (SafeChunkyInputStream input = new SafeChunkyInputStream(target);
-				DataInputStream dis = new DataInputStream(input)) {
-				assertEquals("3.0", dis.readLong(), 1234567890l);
-		} catch (IOException e) {
-			fail("3.10", e);
+			// read chunks
+			try (SafeChunkyInputStream input = new SafeChunkyInputStream(target);
+					DataInputStream dis = new DataInputStream(input)) {
+				assertEquals(dis.readLong(), 1234567890l);
+			}
+		} finally {
+			removeFromFileSystem(temp);
 		}
 	}
+
 }

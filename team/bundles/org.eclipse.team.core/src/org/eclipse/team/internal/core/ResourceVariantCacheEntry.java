@@ -40,13 +40,13 @@ public class ResourceVariantCacheEntry {
 	public static final int READY = 1;
 	public static final int DISPOSED = 2;
 
-	private String id;
-	private String filePath;
-	private ResourceVariantCache cache;
+	private final String id;
+	private final String filePath;
+	private final ResourceVariantCache cache;
 	private int state = UNINITIALIZED;
 	private long lastAccess;
 	private CachedResourceVariant resourceVariant;
-	private ILock lock;
+	private final ILock lock;
 
 	public ResourceVariantCacheEntry(ResourceVariantCache cache, ILock lock, String id, String filePath) {
 		this.lock = lock;
@@ -120,33 +120,24 @@ public class ResourceVariantCacheEntry {
 		try {
 
 			// Open the cache file for writing
-			OutputStream out;
-			try {
-				if (state == UNINITIALIZED) {
-					out = new BufferedOutputStream(new FileOutputStream(ioFile));
-				} else {
+			try (OutputStream out = (state == UNINITIALIZED) ? new BufferedOutputStream(new FileOutputStream(ioFile))
 					// If the entry is READY, the contents must have been read in another thread.
 					// We still need to red the contents but they can be ignored since presumably they are the same
-					out = new ByteArrayOutputStream();
+					: new ByteArrayOutputStream()) {
+
+				// Transfer the contents
+				byte[] buffer = new byte[1024];
+				int read;
+				while ((read = stream.read(buffer)) >= 0) {
+					Policy.checkCanceled(monitor);
+					out.write(buffer, 0, read);
 				}
 			} catch (FileNotFoundException e) {
-				throw new TeamException(NLS.bind(Messages.RemoteContentsCache_fileError, new String[] { ioFile.getAbsolutePath() }), e);
-			}
-
-			// Transfer the contents
-			try {
-				try {
-					byte[] buffer = new byte[1024];
-					int read;
-					while ((read = stream.read(buffer)) >= 0) {
-						Policy.checkCanceled(monitor);
-						out.write(buffer, 0, read);
-					}
-				} finally {
-					out.close();
-				}
+				throw new TeamException(
+						NLS.bind(Messages.RemoteContentsCache_fileError, new String[] { ioFile.getAbsolutePath() }), e);
 			} catch (IOException e) {
-				// Make sure we don't leave the cache file around as it may not have the right contents
+				// Make sure we don't leave the cache file around as it may not have the right
+				// contents
 				cache.purgeFromCache(this);
 				throw e;
 			}

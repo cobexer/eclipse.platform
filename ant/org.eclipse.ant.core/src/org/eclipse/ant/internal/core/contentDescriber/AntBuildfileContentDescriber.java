@@ -46,8 +46,6 @@ public final class AntBuildfileContentDescriber extends XMLContentDescriber impl
 	 * @param contents the contents to be evaluated
 	 *
 	 * @return one of the following:<ul> <li><code>VALID</code></li>, <li><code>INVALID</code></li>, <li><code>INDETERMINATE</code></li> </ul>
-	 *
-	 * @throws IOException
 	 */
 	private int checkCriteria(InputSource contents) throws IOException {
 		AntHandler antHandler = new AntHandler();
@@ -58,6 +56,7 @@ public final class AntBuildfileContentDescriber extends XMLContentDescriber impl
 		}
 		catch (SAXException e) {
 			// we may be handed any kind of contents... it is normal we fail to parse
+			// so we must not log any error here.
 			return INDETERMINATE;
 		}
 		catch (ParserConfigurationException e) {

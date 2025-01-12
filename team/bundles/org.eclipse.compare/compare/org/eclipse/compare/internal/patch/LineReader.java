@@ -40,10 +40,7 @@ public class LineReader {
 		if (!create && file != null && exists(file)) {
 			// read current contents
 			String charset = Utilities.getCharset(file);
-			InputStream is = null;
-			try {
-				is = file.getContents();
-
+			try (InputStream is = file.getContents()) {
 				Reader streamReader = null;
 				try {
 					streamReader = new InputStreamReader(is, charset);
@@ -52,18 +49,14 @@ public class LineReader {
 					streamReader = new InputStreamReader(is);
 				}
 
-				BufferedReader reader = new BufferedReader(streamReader);
-				lines = readLines(reader);
+				try (BufferedReader reader = new BufferedReader(streamReader)) {
+					lines = readLines(reader);
+				}
 			} catch (CoreException ex) {
 				// TODO
 				CompareUIPlugin.log(ex);
-			} finally {
-				if (is != null)
-					try {
-						is.close();
-					} catch (IOException ex) {
-						// silently ignored
-					}
+			} catch (IOException closeException) {
+				// silently ignored
 			}
 		}
 
@@ -134,9 +127,9 @@ public class LineReader {
 	private boolean fHaveChar = false;
 	private int fLastChar;
 	private boolean fSawEOF = false;
-	private BufferedReader fReader;
+	private final BufferedReader fReader;
 	private boolean fIgnoreSingleCR = false;
-	private StringBuilder fBuffer = new StringBuilder();
+	private final StringBuilder fBuffer = new StringBuilder();
 
 	public LineReader(BufferedReader reader) {
 		fReader = reader;

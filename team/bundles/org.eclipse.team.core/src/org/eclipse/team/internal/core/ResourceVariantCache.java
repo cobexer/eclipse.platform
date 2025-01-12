@@ -40,13 +40,13 @@ public class ResourceVariantCache {
 	// Map of registered caches indexed by local name of a QualifiedName
 	private static Map<String, ResourceVariantCache> caches = new HashMap<>(); // String (local name) > RemoteContentsCache
 
-	private String name;
+	private final String name;
 	private Map<String, ResourceVariantCacheEntry> cacheEntries;
 	private long lastCacheCleanup;
 	private int cacheDirSize;
 
 	// Lock used to serialize the writing of cache contents
-	private ILock lock = Job.getJobManager().newLock();
+	private final ILock lock = Job.getJobManager().newLock();
 
 	/**
 	 * Enables the use of remote contents caching for the given cacheId. The cache ID must be unique.
@@ -90,7 +90,6 @@ public class ResourceVariantCache {
 
 	/**
 	 * Return the cache for the given id or null if caching is not enabled for the given id.
-	 * @param cacheId
 	 * @return the cache
 	 */
 	public static synchronized ResourceVariantCache getCache(String cacheId) {
@@ -208,7 +207,6 @@ public class ResourceVariantCache {
 	/**
 	 * Purge the given cache entry from the cache. This method should only be invoked from
 	 * an instance of ResourceVariantCacheEntry after it has set it's state to DISPOSED.
-	 * @param entry
 	 */
 	protected void purgeFromCache(ResourceVariantCacheEntry entry) {
 		purgeFromCache(entry.getId());

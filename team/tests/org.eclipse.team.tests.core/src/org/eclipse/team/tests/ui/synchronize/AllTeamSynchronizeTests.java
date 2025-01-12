@@ -13,25 +13,12 @@
  *******************************************************************************/
 package org.eclipse.team.tests.ui.synchronize;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
 
-import org.eclipse.core.tests.resources.ResourceTest;
-
-public class AllTeamSynchronizeTests extends ResourceTest {
-
-	public AllTeamSynchronizeTests() {
-		super();
-	}
-
-	public AllTeamSynchronizeTests(String name) {
-		super(name);
-	}
-
-	public static Test suite() {
-		TestSuite suite = new TestSuite();
-		suite.addTest(ResourceContentTests.suite());
-		return suite;
-	}
+@Suite
+@SelectClasses({ //
+	ResourceContentTests.class, //
+})
+public class AllTeamSynchronizeTests {
 }
-

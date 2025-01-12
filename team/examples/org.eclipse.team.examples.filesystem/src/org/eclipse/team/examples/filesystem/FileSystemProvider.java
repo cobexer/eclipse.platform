@@ -22,7 +22,6 @@ import org.eclipse.core.resources.team.FileModificationValidator;
 import org.eclipse.core.resources.team.ResourceRuleFactory;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.QualifiedName;
 import org.eclipse.team.core.RepositoryProvider;
 import org.eclipse.team.core.TeamException;
@@ -57,7 +56,6 @@ import org.eclipse.team.examples.filesystem.subscriber.FileSystemSubscriber;
  * <li>Use of decorators
  * <li>combining streams and progress monitors to get responsive UI
  * </ol>
- *
  */
 public class FileSystemProvider extends RepositoryProvider {
 
@@ -125,12 +123,11 @@ public class FileSystemProvider extends RepositoryProvider {
 	 * perform any operations.
 	 *
 	 * @param location the path representing the location where the project contents will be stored.
-	 * @throws TeamException
 	 */
 	public void setTargetLocation(String location) throws TeamException {
 
 		// set the instance variable to the provided path
-		root = new Path(location);
+		root = IPath.fromOSString(location);
 
 		// ensure that the location is a folder (if it exists)
 		File file = new File(location);
@@ -160,7 +157,7 @@ public class FileSystemProvider extends RepositoryProvider {
 				if (location == null) {
 					return null;
 				}
-				root = new Path(location);
+				root = IPath.fromOSString(location);
 			} catch (CoreException e) {
 				// log the problem and carry on
 				FileSystemPlugin.log(e);

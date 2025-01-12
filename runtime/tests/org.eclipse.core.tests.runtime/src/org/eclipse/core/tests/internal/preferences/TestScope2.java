@@ -13,12 +13,14 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.preferences;
 
+import static org.eclipse.core.tests.harness.FileSystemHelper.getRandomLocation;
+
 import java.util.Properties;
 import org.eclipse.core.internal.preferences.EclipsePreferences;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.IScopeContext;
-import org.eclipse.core.tests.harness.CoreTest;
 import org.osgi.service.prefs.BackingStoreException;
 
 /*
@@ -37,7 +39,7 @@ public class TestScope2 extends EclipsePreferences implements IScopeContext {
 	private IPath location;
 
 	static {
-		baseLocation = new CoreTest().getRandomLocation();
+		baseLocation = getRandomLocation();
 	}
 
 	public TestScope2() {
@@ -47,7 +49,7 @@ public class TestScope2 extends EclipsePreferences implements IScopeContext {
 	private TestScope2(EclipsePreferences parent, String key) {
 		super(parent, key);
 		// cache the segment count
-		IPath path = new Path(absolutePath());
+		IPath path = IPath.fromOSString(absolutePath());
 		segmentCount = path.segmentCount();
 		if (segmentCount < 2) {
 			return;

@@ -165,8 +165,6 @@ public class TaskDescriptionProvider {
 	/**
 	 * Adds a new child {@link ProposalNode} to the given parent node
 	 * 
-	 * @param element
-	 * @param node
 	 * @since 3.5
 	 */
 	void addNode(Element element, ProposalNode node) {
@@ -179,7 +177,6 @@ public class TaskDescriptionProvider {
 	/**
 	 * Recursively find the description text for the parent {@link Element}
 	 * 
-	 * @param element
 	 * @return the description element text or <code>null</code>
 	 * @since 3.5
 	 */
@@ -205,7 +202,8 @@ public class TaskDescriptionProvider {
 	private Document parseFile(String aFileName) {
 		Document tempDocument = null;
 
-		DocumentBuilderFactory tempFactory = DocumentBuilderFactory.newInstance();
+		@SuppressWarnings("restriction")
+		DocumentBuilderFactory tempFactory = org.eclipse.core.internal.runtime.XmlProcessorFactory.createDocumentBuilderFactoryWithErrorOnDOCTYPE();
 		tempFactory.setIgnoringComments(true);
 		tempFactory.setIgnoringElementContentWhitespace(true);
 		tempFactory.setCoalescing(true);
@@ -278,7 +276,6 @@ public class TaskDescriptionProvider {
 	/**
 	 * Returns the {@link ProposalNode} for the given task name or <code>null</code> if one does not exist
 	 * 
-	 * @param aTaskName
 	 * @return the {@link ProposalNode} for the given name or <code>null</code>
 	 * @since 3.5
 	 */

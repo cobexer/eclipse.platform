@@ -13,6 +13,10 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.ui.testplugin;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -24,9 +28,7 @@ import java.io.UnsupportedEncodingException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 
 import org.eclipse.ant.internal.ui.AntUIPlugin;
 import org.eclipse.ant.internal.ui.IAntUIPreferenceConstants;
@@ -71,35 +73,28 @@ import org.eclipse.ui.internal.console.IOConsolePartition;
 import org.eclipse.ui.intro.IIntroManager;
 import org.eclipse.ui.intro.IIntroPart;
 import org.eclipse.ui.progress.UIJob;
+import org.junit.Before;
+import org.junit.Rule;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
-
-import junit.framework.TestCase;
 
 /**
  * Abstract Ant UI test class
  */
 @SuppressWarnings("restriction")
-public abstract class AbstractAntUITest extends TestCase {
+public abstract class AbstractAntUITest {
 
 	public static String ANT_EDITOR_ID = "org.eclipse.ant.ui.internal.editor.AntEditor"; //$NON-NLS-1$
 	private boolean welcomeClosed = false;
 	private IDocument currentDocument;
 
-	/**
-	 * Constructor
-	 *
-	 * @param name
-	 */
-	public AbstractAntUITest(String name) {
-		super(name);
-	}
+	@Rule
+	public TestAgainExceptionRule testAgainRule = new TestAgainExceptionRule(5);
 
 	/**
 	 * Returns the {@link IFile} for the given build file name
 	 *
-	 * @param buildFileName
 	 * @return the associated {@link IFile} for the given build file name
 	 */
 	protected IFile getIFile(String buildFileName) {
@@ -109,7 +104,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the {@link File} for the given build file name
 	 *
-	 * @param buildFileName
 	 * @return the {@link File} for the given build file name
 	 */
 	protected File getBuildFile(String buildFileName) {
@@ -118,34 +112,8 @@ public abstract class AbstractAntUITest extends TestCase {
 		return file.getLocation().toFile();
 	}
 
-	/**
-	 * When a test throws the 'try again' exception, try it again.
-	 *
-	 * @see junit.framework.TestCase#runBare()
-	 */
-	@Override
-	public void runBare() throws Throwable {
-		boolean tryAgain = true;
-		int attempts = 0;
-		while (tryAgain) {
-			try {
-				attempts++;
-				super.runBare();
-				tryAgain = false;
-			}
-			catch (TestAgainException e) {
-				System.out.println("Test failed attempt " + attempts + ". Re-testing: " + this.getName()); //$NON-NLS-1$ //$NON-NLS-2$
-				e.printStackTrace();
-				if (attempts > 5) {
-					tryAgain = false;
-				}
-			}
-		}
-	}
-
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
+	@Before
+	public void setUp() throws Exception {
 		assertProject();
 		assertWelcomeScreenClosed();
 	}
@@ -153,7 +121,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Ensure the welcome screen is closed because in 4.x the debug perspective opens a giant fast-view causing issues
 	 *
-	 * @throws Exception
 	 * @since 3.8
 	 */
 	void assertWelcomeScreenClosed() throws Exception {
@@ -237,7 +204,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the underlying {@link IDocument} for the given file name
 	 *
-	 * @param fileName
 	 * @return the underlying {@link IDocument} for the given file name
 	 */
 	protected IDocument getDocument(String fileName) {
@@ -256,7 +222,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the contents of the given {@link InputStream} as a {@link String}
 	 *
-	 * @param inputStream
 	 * @return the {@link InputStream} as a {@link String}
 	 */
 	protected String getStreamContentAsString(InputStream inputStream) {
@@ -276,7 +241,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the contents of the given {@link BufferedReader} as a {@link String}
 	 *
-	 * @param bufferedReader
 	 * @return the contents of the given {@link BufferedReader} as a {@link String}
 	 */
 	protected String getReaderContentAsStringNew(BufferedReader bufferedReader) {
@@ -300,7 +264,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the contents of the given {@link BufferedReader} as a {@link String}
 	 *
-	 * @param bufferedReader
 	 * @return the contents of the given {@link BufferedReader} as a {@link String}
 	 */
 	protected String getReaderContentAsString(BufferedReader bufferedReader) {
@@ -327,7 +290,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	/**
 	 * Returns the {@link AntModel} for the given file name
 	 *
-	 * @param fileName
 	 * @return the {@link AntModel} for the given file name
 	 */
 	protected AntModel getAntModel(String fileName) {
@@ -346,8 +308,6 @@ public abstract class AbstractAntUITest extends TestCase {
 
 	/**
 	 * Allows the current {@link IDocument} context to be set. This method accepts <code>null</code>
-	 *
-	 * @param currentDocument
 	 */
 	public void setCurrentDocument(IDocument currentDocument) {
 		this.currentDocument = currentDocument;
@@ -386,7 +346,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	 *
 	 * @param buildFileName
 	 *            build file to launch
-	 * @return thread in which the first suspend event occurred
 	 */
 	protected void launchWithDebug(String buildFileName) throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration(buildFileName);
@@ -422,31 +381,7 @@ public abstract class AbstractAntUITest extends TestCase {
 	}
 
 	/**
-	 * @return a new SAX parser instrance
-	 */
-	protected SAXParser getSAXParser() {
-		SAXParser parser = null;
-		try {
-			parser = SAXParserFactory.newInstance().newSAXParser();
-		}
-		catch (ParserConfigurationException e) {
-			AntUIPlugin.log(e);
-		}
-		catch (SAXException e) {
-			AntUIPlugin.log(e);
-		}
-		return parser;
-	}
-
-	/**
 	 * Parses the given input stream with the given parser using the given handler
-	 *
-	 * @param stream
-	 * @param parser
-	 * @param handler
-	 * @param editedFile
-	 * @throws IOException
-	 * @throws SAXException
 	 */
 	protected void parse(InputStream stream, SAXParser parser, DefaultHandler handler, File editedFile) throws SAXException, IOException {
 		InputSource inputSource = new InputSource(stream);
@@ -477,10 +412,6 @@ public abstract class AbstractAntUITest extends TestCase {
 
 	/**
 	 * Launches the given configuration and waits for the terminated event or the length of the given timeout, whichever comes first
-	 *
-	 * @param config
-	 * @param timeout
-	 * @throws CoreException
 	 */
 	protected void launchAndTerminate(ILaunchConfiguration config, int timeout) throws CoreException {
 		DebugEventWaiter waiter = new DebugElementKindEventWaiter(DebugEvent.TERMINATE, IProcess.class);
@@ -502,8 +433,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	 * @param waiter
 	 *            the event waiter to use
 	 * @return Object the source of the event
-	 * @exception Exception
-	 *                if the event is never received.
 	 */
 	protected Object launchAndWait(ILaunchConfiguration configuration, DebugEventWaiter waiter) throws CoreException {
 		ILaunch launch = configuration.launch(ILaunchManager.RUN_MODE, null);
@@ -530,8 +459,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	 * Returns the {@link IHyperlink} at the given offset on the given document, or <code>null</code> if there is no {@link IHyperlink} at that offset
 	 * on the document.
 	 *
-	 * @param offset
-	 * @param doc
 	 * @return the {@link IHyperlink} at the given offset on the given document or <code>null</code>
 	 */
 	protected IHyperlink getHyperlink(int offset, IDocument doc) {
@@ -557,8 +484,6 @@ public abstract class AbstractAntUITest extends TestCase {
 	 * Returns the {@link Color} at the given offset on the given document, or <code>null</code> if there is no {@link Color} at that offset on the
 	 * document.
 	 *
-	 * @param offset
-	 * @param document
 	 * @return the {@link Color} at the given offset on the given document or <code>null</code>
 	 */
 	protected Color getColorAtOffset(int offset, IDocument document) throws BadLocationException {

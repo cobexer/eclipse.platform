@@ -22,8 +22,8 @@ import org.eclipse.debug.core.model.IFlushableStreamMonitor;
  */
 public class AntStreamMonitor implements IFlushableStreamMonitor {
 
-	private StringBuffer fContents = new StringBuffer();
-	private ListenerList<IStreamListener> fListeners = new ListenerList<>(1);
+	private final StringBuffer fContents = new StringBuffer();
+	private final ListenerList<IStreamListener> fListeners = new ListenerList<>(1);
 	private boolean fBuffered = true;
 
 	@Override
@@ -43,8 +43,6 @@ public class AntStreamMonitor implements IFlushableStreamMonitor {
 
 	/**
 	 * Appends the given message to this stream, and notifies listeners.
-	 *
-	 * @param message
 	 */
 	public void append(String message) {
 		if (isBuffered()) {

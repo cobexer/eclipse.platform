@@ -41,7 +41,8 @@ public class NullBuildLogger extends AbstractEclipseBuildLogger implements Build
 		fMessageOutputLevel = level;
 	}
 
-	protected int getMessageOutputLevel() {
+	@Override
+	public int getMessageOutputLevel() {
 		return fMessageOutputLevel;
 	}
 

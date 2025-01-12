@@ -25,7 +25,6 @@ import java.util.StringTokenizer;
 
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.URIUtil;
@@ -40,67 +39,57 @@ import org.xml.sax.helpers.DefaultHandler;
  */
 
 public class ConfigurationParser extends DefaultHandler implements IConfigurationConstants {
-	
+
 	private static final String URL_PROPERTY = "org.eclipse.update.resolution_url"; //$NON-NLS-1$
 	private static final String EMPTY_STRING = ""; //$NON-NLS-1$
-	private final static SAXParserFactory parserFactory =
-		SAXParserFactory.newInstance();
 	private SAXParser parser;
-	
+
 	private URL currentSiteURL;
 	private Configuration config;
 	private URL configURL;
-	private InputStream input;
 	private URL installLocation;
-	
+
 	/**
 	 * Constructor for ConfigurationParser
 	 */
+	@SuppressWarnings("restriction")
 	public ConfigurationParser() throws InvocationTargetException {
-
 		try {
-			parserFactory.setNamespaceAware(true);
-			this.parser = parserFactory.newSAXParser();
-		} catch (ParserConfigurationException e) {
-			Utils.log(Utils.newStatus("ConfigurationParser", e)); //$NON-NLS-1$
-			throw new InvocationTargetException(e);
-		} catch (SAXException e) {
+			this.parser = org.eclipse.core.internal.runtime.XmlProcessorFactory.createSAXParserWithErrorOnDOCTYPE(true);
+		} catch (SAXException| ParserConfigurationException e) {
 			Utils.log(Utils.newStatus("ConfigurationParser", e)); //$NON-NLS-1$
 			throw new InvocationTargetException(e);
 		}
 	}
-	
+
 	public Configuration parse(URL url, URL installLocation) throws Exception {
 
 		// DEBUG:		
 		Utils.debug("Start parsing Configuration:" + url); //$NON-NLS-1$	
 		long lastModified = 0;
+		this.configURL = url;
+		this.installLocation = installLocation;
 		try {
-			configURL = url;
-			this.installLocation = installLocation;
 			if ("file".equals(url.getProtocol())) { //$NON-NLS-1$
 				File inputFile = URIUtil.toFile(URIUtil.toURI(url));
 				if (!inputFile.exists() || !inputFile.canRead())
 					return null;
 				lastModified = inputFile.lastModified();
-				input = new FileInputStream(inputFile);
-			} else 
-				input = url.openStream();
-			parser.parse(new InputSource(input), this);
+				try (InputStream input = new FileInputStream(inputFile)) {
+					parser.parse(new InputSource(input), this);
+				}
+			} else {
+				try (InputStream input = url.openStream()) {
+					parser.parse(new InputSource(input), this);
+				}
+			}
 			return config;
 		} catch (Exception e) {
 			Utils.log(Utils.newStatus("ConfigurationParser.parse() error:", e)); //$NON-NLS-1$
 			throw e;
 		} finally {
-			if (config != null)
+			if (config != null) {
 				config.setLastModified(lastModified);
-			try {
-				if (input != null) { 
-					input.close();
-					input = null;
-				}
-			} catch (IOException e1) {
-				Utils.log(e1.getLocalizedMessage());
 			}
 		}
 	}

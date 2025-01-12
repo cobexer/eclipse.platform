@@ -17,10 +17,20 @@ package org.eclipse.core.internal.events;
 
 import java.util.Map;
 import java.util.Map.Entry;
-import org.eclipse.core.internal.resources.*;
+import org.eclipse.core.internal.resources.ICoreConstants;
+import org.eclipse.core.internal.resources.IMarkerSetElement;
+import org.eclipse.core.internal.resources.MarkerSet;
+import org.eclipse.core.internal.resources.ResourceInfo;
 import org.eclipse.core.internal.watson.ElementTree;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.IContainer;
+import org.eclipse.core.resources.IMarkerDelta;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IResourceDeltaVisitor;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.PlatformObject;
 
 /**
  * Concrete implementation of the IResourceDelta interface.  Each ResourceDelta
@@ -100,17 +110,17 @@ public class ResourceDelta extends PlatformObject implements IResourceDelta {
 	}
 
 	@Override
-	public IResourceDelta findMember(IPath path) {
-		int segmentCount = path.segmentCount();
+	public IResourceDelta findMember(IPath memberPath) {
+		int segmentCount = memberPath.segmentCount();
 		if (segmentCount == 0)
 			return this;
 
 		//iterate over the path and find matching child delta
 		ResourceDelta current = this;
 		segments: for (int i = 0; i < segmentCount; i++) {
-			for (IResourceDelta element : current.children) {
-				if (element.getFullPath().lastSegment().equals(path.segment(i))) {
-					current = (ResourceDelta) element;
+			for (ResourceDelta element : current.children) {
+				if (element.getFullPath().lastSegment().equals(memberPath.segment(i))) {
+					current = element;
 					continue segments;
 				}
 			}
@@ -256,7 +266,7 @@ public class ResourceDelta extends PlatformObject implements IResourceDelta {
 		if (markerDeltas == null)
 			return EMPTY_MARKER_DELTAS;
 		if (path == null)
-			path = Path.ROOT;
+			path = IPath.ROOT;
 		MarkerSet changes = markerDeltas.get(path);
 		if (changes == null)
 			return EMPTY_MARKER_DELTAS;
@@ -290,7 +300,7 @@ public class ResourceDelta extends PlatformObject implements IResourceDelta {
 		if (count < 0)
 			return null;
 		if (count <= 1) // 0 or 1
-			return Path.EMPTY;
+			return IPath.EMPTY;
 		return full.removeFirstSegments(1);
 	}
 

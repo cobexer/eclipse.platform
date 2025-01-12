@@ -61,9 +61,9 @@ import org.eclipse.ui.progress.UIJob;
  */
 public final class SyncInfoCompareInput extends SaveableCompareEditorInput implements IResourceChangeListener {
 
-	private MyDiffNode node;
-	private String description;
-	private IResource resource;
+	private final MyDiffNode node;
+	private final String description;
+	private final IResource resource;
 	private ISynchronizeParticipant participant;
 	private ISynchronizePageConfiguration synchronizeConfiguration;
 
@@ -137,7 +137,6 @@ public final class SyncInfoCompareInput extends SaveableCompareEditorInput imple
 		}
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T getAdapter(Class<T> adapter) {
 		if (IFile.class.equals(adapter) && resource.getType() == IResource.FILE) {

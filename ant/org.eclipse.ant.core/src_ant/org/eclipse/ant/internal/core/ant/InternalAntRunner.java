@@ -52,6 +52,7 @@ import org.apache.tools.ant.ProjectHelper;
 import org.apache.tools.ant.Target;
 import org.apache.tools.ant.TaskAdapter;
 import org.apache.tools.ant.XmlLogger;
+import org.apache.tools.ant.util.JavaEnvUtils;
 import org.eclipse.ant.core.AntCorePlugin;
 import org.eclipse.ant.core.AntCorePreferences;
 import org.eclipse.ant.core.AntSecurityException;
@@ -70,7 +71,6 @@ import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.OperationCanceledException;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.osgi.framework.Bundle;
@@ -82,6 +82,17 @@ import org.osgi.framework.Version;
  */
 @SuppressWarnings("removal") // SecurityManager
 public class InternalAntRunner {
+
+	private static final boolean IS_SECURITY_MANAGER_SUPPORTED = isSecurityManagerAllowed();
+
+	private static boolean isSecurityManagerAllowed() {
+		String sm = System.getProperty("java.security.manager"); //$NON-NLS-1$
+		if (sm == null) { // default is 'disallow' since 18 and was 'allow' before
+			return !JavaEnvUtils.isAtLeastJavaVersion("18"); //$NON-NLS-1$
+		}
+		// Value is either 'disallow' or 'allow' or specifies the SecurityManager class to set
+		return !"disallow".equals(sm); //$NON-NLS-1$
+	}
 
 	private IProgressMonitor monitor;
 	private ArrayList<String> buildListeners;
@@ -286,8 +297,6 @@ public class InternalAntRunner {
 
 	/**
 	 * Sets the default <code>ant.file</code> and <code>ant.version</code> properties in the given {@link Project}
-	 *
-	 * @param project
 	 */
 	protected void setBuiltInProperties(Project project) {
 		// note also see processAntHome for system properties that are set
@@ -698,11 +707,10 @@ public class InternalAntRunner {
 			if (extraArguments != null) {
 				printArguments(getCurrentProject());
 			}
-			try {
+			if (IS_SECURITY_MANAGER_SUPPORTED) {
+				// TODO: call SecurityManagerUtil.isSecurityManagerAllowed() once it's more fine-grained,
+				// i.e. once https://github.com/apache/ant/pull/216 is available.
 				System.setSecurityManager(new AntSecurityManager(originalSM, Thread.currentThread()));
-			}
-			catch (UnsupportedOperationException ex) {
-				AntCorePlugin.getPlugin().getLog().log(new Status(IStatus.ERROR, AntCorePlugin.PI_ANTCORE, 0, InternalAntMessages.InternalAntRunner_SecurityManagerError, null));
 			}
 			if (targets == null) {
 				targets = new Vector<>(1);
@@ -763,7 +771,7 @@ public class InternalAntRunner {
 	}
 
 	/**
-	 * Re-maps {@link System.in} to the Ant input stream setter
+	 * Re-maps {@link System#in} to the Ant input stream setter
 	 */
 	protected void remapSystemIn() {
 		if (!isVersionCompatible("1.6")) { //$NON-NLS-1$
@@ -848,9 +856,6 @@ public class InternalAntRunner {
 
 	/**
 	 * Sends the the event to the backing project that the build has completed
-	 *
-	 * @param project
-	 * @param error
 	 */
 	protected void fireBuildFinished(Project project, Throwable error) {
 		if (usingXmlLogger()) {
@@ -859,8 +864,8 @@ public class InternalAntRunner {
 			if (fileName == null) {
 				fileName = "log.xml"; //$NON-NLS-1$
 			}
-			String realPath = new Path(getBuildFileLocation()).toFile().getAbsolutePath();
-			IPath path = new Path(realPath);
+			String realPath = IPath.fromOSString(getBuildFileLocation()).toFile().getAbsolutePath();
+			IPath path = IPath.fromOSString(realPath);
 			path = path.removeLastSegments(1);
 			path = path.addTrailingSeparator();
 			path = path.append(fileName);
@@ -1378,8 +1383,6 @@ public class InternalAntRunner {
 
 	/**
 	 * Process properties specified using <code>-D</code>
-	 *
-	 * @param commands
 	 */
 	protected void processMinusDProperties(List<String> commands) {
 		if (!commands.isEmpty() && userProperties == null) {
@@ -1440,9 +1443,7 @@ public class InternalAntRunner {
 		}
 		try {
 			List<Properties> allProperties = AntCoreUtil.loadPropertyFiles(propertyFiles, currentProject.getUserProperty("basedir"), getBuildFileLocation()); //$NON-NLS-1$
-			Iterator<Properties> iter = allProperties.iterator();
-			while (iter.hasNext()) {
-				Properties props = iter.next();
+			for (Properties props : allProperties) {
 				Enumeration<?> propertyNames = props.propertyNames();
 				while (propertyNames.hasMoreElements()) {
 					String name = (String) propertyNames.nextElement();

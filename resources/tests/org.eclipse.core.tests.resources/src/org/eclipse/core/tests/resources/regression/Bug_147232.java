@@ -13,16 +13,34 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import org.eclipse.core.resources.*;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.setAutoBuilding;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.updateProjectDescription;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.waitForBuild;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResourceChangeEvent;
+import org.eclipse.core.resources.IResourceChangeListener;
+import org.eclipse.core.resources.IResourceDelta;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.internal.builders.AbstractBuilderTest;
 import org.eclipse.core.tests.internal.builders.ClearMarkersBuilder;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests duplicate resource change events caused by a builder that makes
  * no changes.
  */
-public class Bug_147232 extends AbstractBuilderTest implements IResourceChangeListener {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_147232 implements IResourceChangeListener {
+
 	/**
 	 * Records the number of times we have seen the file creation delta
 	 */
@@ -30,10 +48,6 @@ public class Bug_147232 extends AbstractBuilderTest implements IResourceChangeLi
 
 	IFile file;
 	IProject project;
-
-	public Bug_147232(String name) {
-		super(name);
-	}
 
 	@Override
 	public void resourceChanged(IResourceChangeEvent event) {
@@ -48,41 +62,33 @@ public class Bug_147232 extends AbstractBuilderTest implements IResourceChangeLi
 		}
 	}
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
+	@BeforeEach
+	public void setUp() throws Exception {
 		// make the builder wait after running to all a POST_CHANGE event to occur before POST_BUILD
 		ClearMarkersBuilder.pauseAfterBuild = true;
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
+	@AfterEach
+	public void tearDown() throws Exception {
 		getWorkspace().removeResourceChangeListener(this);
 		ClearMarkersBuilder.pauseAfterBuild = false;
 	}
 
-	public void testBug() {
+	@Test
+	public void testBug() throws CoreException {
 		project = getWorkspace().getRoot().getProject("Bug_147232");
 		file = project.getFile("file.txt");
 		getWorkspace().addResourceChangeListener(this, IResourceChangeEvent.POST_CHANGE | IResourceChangeEvent.PRE_BUILD | IResourceChangeEvent.POST_BUILD);
-		try {
-			setAutoBuilding(false);
-			project.create(getMonitor());
-			project.open(getMonitor());
-			addBuilder(project, ClearMarkersBuilder.BUILDER_NAME);
-			setAutoBuilding(true);
-		} catch (CoreException e) {
-			fail("0.99", e);
-		}
+		setAutoBuilding(false);
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
+		updateProjectDescription(project).addingCommand(ClearMarkersBuilder.BUILDER_NAME).withTestBuilderId("builder")
+				.apply();
+		setAutoBuilding(true);
 		//create a file in the project to trigger a build
-		try {
-			create(file, true);
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+		createInWorkspace(file);
 		waitForBuild();
-		assertEquals("2.0", 1, deltaSeenCount);
+		assertEquals(1, deltaSeenCount);
 	}
 
 }

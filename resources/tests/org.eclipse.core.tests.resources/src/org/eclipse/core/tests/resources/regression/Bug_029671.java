@@ -13,18 +13,34 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import org.eclipse.core.resources.*;
+import static java.util.function.Predicate.not;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.assertExistsInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomString;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ISynchronizer;
+import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.QualifiedName;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * When a container was moved, its children were not added to phantom space.
- *
  */
-public class Bug_029671 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_029671 {
 
-	public void testBug() {
+	@Test
+	public void testBug() throws CoreException {
 		final QualifiedName partner = new QualifiedName("org.eclipse.core.tests.resources", "myTarget");
 		IWorkspace workspace = getWorkspace();
 		final ISynchronizer synchronizer = workspace.getSynchronizer();
@@ -34,35 +50,28 @@ public class Bug_029671 extends ResourceTest {
 		IFolder folder = project.getFolder("source");
 		IFile file = folder.getFile("file.txt");
 
-		ensureExistsInWorkspace(file, true);
+		createInWorkspace(file);
 
 		try {
 			// sets sync info for the folder and its children
-			try {
-				synchronizer.setSyncInfo(partner, folder, getRandomString().getBytes());
-				synchronizer.setSyncInfo(partner, file, getRandomString().getBytes());
-			} catch (CoreException ce) {
-				fail("1.0", ce);
-			}
+			synchronizer.setSyncInfo(partner, folder, createRandomString().getBytes());
+			synchronizer.setSyncInfo(partner, file, createRandomString().getBytes());
 
 			IFolder targetFolder = project.getFolder("target");
 			IFile targetFile = targetFolder.getFile(file.getName());
 
-			try {
-				folder.move(targetFolder.getFullPath(), false, false, getMonitor());
-			} catch (CoreException e) {
-				fail("2.0", e);
-			}
-			assertTrue("3.0", folder.isPhantom());
-			assertTrue("4.0", file.isPhantom());
+			folder.move(targetFolder.getFullPath(), false, false, createTestMonitor());
+			assertThat(folder).matches(IResource::isPhantom, "is phantom");
+			assertThat(file).matches(IResource::isPhantom, "is phantom");
 
-			assertExistsInWorkspace("5.0", targetFolder);
-			assertTrue("5.1", !targetFolder.isPhantom());
+			assertExistsInWorkspace(targetFolder);
+			assertThat(targetFolder).matches(not(IResource::isPhantom), "is not phantom");
 
-			assertExistsInWorkspace("6.0", targetFile);
-			assertTrue("6.1", !targetFile.isPhantom());
+			assertExistsInWorkspace(targetFile);
+			assertThat(targetFile).matches(not(IResource::isPhantom), "is not phantom");
 		} finally {
 			synchronizer.remove(partner);
 		}
 	}
+
 }

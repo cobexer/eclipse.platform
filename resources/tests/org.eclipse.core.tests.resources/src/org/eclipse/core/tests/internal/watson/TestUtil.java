@@ -14,15 +14,17 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.watson;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Random;
-import org.eclipse.core.internal.watson.*;
+import org.eclipse.core.internal.watson.ElementTree;
+import org.eclipse.core.internal.watson.ElementTreeWriter;
+import org.eclipse.core.internal.watson.IElementComparator;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 
 /**
  * Framework for running tests on element tree components.
@@ -39,7 +41,7 @@ class TestUtil implements IPathConstants {
 	 * @param actual the actual value of a tree
 	 */
 	static protected void assertEqualTrees(String message, ElementTree expected, ElementTree actual) {
-		assertEqualTrees(message, expected, actual, Path.ROOT, ElementTreeWriter.D_INFINITE);
+		assertEqualTrees(message, expected, actual, IPath.ROOT, ElementTreeWriter.D_INFINITE);
 	}
 
 	/**
@@ -63,22 +65,22 @@ class TestUtil implements IPathConstants {
 	 */
 	static protected void assertEqualTrees(String msg, ElementTree expected, ElementTree actual, IPath path, int depth) {
 		/* check node at current path */
-		assertTrue(msg, expected.includes(path));
-		assertTrue(msg, actual.includes(path));
-		assertEquals(msg, expected.getElementData(path), actual.getElementData(path));
+		assertTrue(expected.includes(path), msg);
+		assertTrue(actual.includes(path), msg);
+		assertEquals(expected.getElementData(path), actual.getElementData(path), msg);
 
 		if (depth != 0) {
 			/* get the children */
 			IPath[] expectedChildren = expected.getChildren(path);
 			IPath[] actualChildren = actual.getChildren(path);
-			assertEquals("Number of children", expectedChildren.length, actualChildren.length);
+			assertThat(actualChildren).describedAs("Number of children").hasSameSizeAs(expectedChildren);
 
 			int newDepth = depth;
 			if (depth != ElementTreeWriter.D_INFINITE) {
 				--newDepth;
 			}
 			for (int i = 0; i < expectedChildren.length; i++) {
-				assertEquals("children IDs", expectedChildren[i], actualChildren[i]);
+				assertEquals(expectedChildren[i], actualChildren[i], "children IDs");
 				assertEqualTrees("Recursive call", expected, actual, expectedChildren[i], newDepth);
 			}
 		}
@@ -89,7 +91,7 @@ class TestUtil implements IPathConstants {
 	 */
 	static protected void assertHasPaths(ElementTree tree, IPath[] paths) {
 		for (int i = 0; i < paths.length; i++) {
-			assertTrue("assertHasPaths" + i, tree.includes(paths[i]));
+			assertTrue(tree.includes(paths[i]), "assertHasPaths" + i);
 		}
 	}
 
@@ -98,7 +100,7 @@ class TestUtil implements IPathConstants {
 	 */
 	static protected void assertNoPaths(ElementTree tree, IPath[] paths) {
 		for (IPath path : paths) {
-			assertFalse("assertNoPaths: " + path, tree.includes(path));
+			assertFalse(tree.includes(path), "assertNoPaths: " + path);
 		}
 	}
 
@@ -108,30 +110,30 @@ class TestUtil implements IPathConstants {
 	static protected void assertTreeStructure(ElementTree tree) {
 		assertHasPaths(tree, getTreePaths());
 
-		IPath[] children = tree.getChildren(Path.ROOT);
-		assertEquals(1, children.length);
+		IPath[] children = tree.getChildren(IPath.ROOT);
+		assertThat(children).hasSize(1);
 
 		/* solution children */
 		children = tree.getChildren(children[0]);
-		assertEquals(2, children.length);
-		assertEquals(0, tree.getChildren(project1).length);
+		assertThat(children).hasSize(2);
+		assertThat(tree.getChildren(project1)).isEmpty();
 
 		/* project2 children */
 		children = tree.getChildren(children[1]);
-		assertEquals(3, children.length);
-		assertEquals(0, tree.getChildren(file1).length);
-		assertEquals(0, tree.getChildren(folder2).length);
+		assertThat(children).hasSize(3);
+		assertThat(tree.getChildren(file1)).isEmpty();
+		assertThat(tree.getChildren(folder2)).isEmpty();
 
 		/* folder1 children */
 		children = tree.getChildren(children[1]);
-		assertEquals(3, children.length);
-		assertEquals(0, tree.getChildren(file2).length);
-		assertEquals(0, tree.getChildren(folder4).length);
+		assertThat(children).hasSize(3);
+		assertThat(tree.getChildren(file2)).isEmpty();
+		assertThat(tree.getChildren(folder4)).isEmpty();
 
 		/* folder3 children */
 		children = tree.getChildren(children[1]);
-		assertEquals(1, children.length);
-		assertEquals(0, tree.getChildren(file3).length);
+		assertThat(children).hasSize(1);
+		assertThat(tree.getChildren(file3)).isEmpty();
 	}
 
 	static ElementTree createTestElementTree() {
@@ -319,7 +321,7 @@ class TestUtil implements IPathConstants {
 	 * arrays undergo the same permutation.
 	 */
 	static protected void scramble(Object[] first, Object[] second) {
-		assertTrue(first.length == second.length);
+		assertThat(first).hasSameSizeAs(second);
 		Random random = new Random(System.currentTimeMillis());
 
 		final int len = first.length;

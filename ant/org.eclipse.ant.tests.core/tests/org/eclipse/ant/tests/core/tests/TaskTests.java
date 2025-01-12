@@ -13,9 +13,9 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.core.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
 import java.net.URL;
@@ -30,14 +30,12 @@ import org.eclipse.ant.tests.core.AbstractAntTest;
 import org.eclipse.ant.tests.core.testplugin.AntTestChecker;
 import org.eclipse.ant.tests.core.testplugin.ProjectHelper;
 import org.eclipse.core.runtime.CoreException;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TaskTests extends AbstractAntTest {
 
 	/**
 	 * Testing the old deprecated API
-	 * 
-	 * @throws CoreException
 	 */
 	@SuppressWarnings("deprecation")
 	@Test
@@ -54,7 +52,7 @@ public class TaskTests extends AbstractAntTest {
 
 		run("CustomTask.xml", new String[0], false); //$NON-NLS-1$
 		String msg = AntTestChecker.getDefault().getMessages().get(1);
-		assertEquals("Message incorrect: " + msg, "Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$ //$NON-NLS-2$
+		assertEquals("Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$
 		assertSuccessful();
 	}
 
@@ -72,7 +70,7 @@ public class TaskTests extends AbstractAntTest {
 
 		run("CustomTask.xml", new String[] { "Custom Task from Entry" }, false); //$NON-NLS-1$ //$NON-NLS-2$
 		String msg = AntTestChecker.getDefault().getMessages().get(1);
-		assertEquals("Message incorrect: " + msg, "Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$ //$NON-NLS-2$
+		assertEquals("Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$
 		assertSuccessful();
 	}
 
@@ -81,10 +79,10 @@ public class TaskTests extends AbstractAntTest {
 		AntCorePreferences prefs = AntCorePlugin.getPlugin().getPreferences();
 		prefs.setCustomTasks(new Task[] {});
 		try {
-			CoreException ce = assertThrows("Build should have failed as task no longer defined", CoreException.class, //$NON-NLS-1$
-					() -> run("CustomTask.xml")); //$NON-NLS-1$
-			assertTrue("Exception from undefined task is incorrect", ce.getMessage().trim() //$NON-NLS-1$
-					.endsWith("Action: Check that any <presetdef>/<macrodef> declarations have taken place.")); //$NON-NLS-1$
+			CoreException ce = assertThrows(CoreException.class, () -> run("CustomTask.xml"), //$NON-NLS-1$
+					"Build should have failed as task no longer defined"); //$NON-NLS-1$
+			assertThat(ce.getMessage().trim()).as("exception from undefined type") //$NON-NLS-1$
+					.endsWith("Action: Check that any <presetdef>/<macrodef> declarations have taken place."); //$NON-NLS-1$
 		} finally {
 			restorePreferenceDefaults();
 		}
@@ -113,7 +111,7 @@ public class TaskTests extends AbstractAntTest {
 
 			run("CustomTask.xml", new String[0], false); //$NON-NLS-1$
 			String msg = AntTestChecker.getDefault().getMessages().get(1);
-			assertEquals("Message incorrect: " + msg, "Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$ //$NON-NLS-2$
+			assertEquals("Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$
 			assertSuccessful();
 		} finally {
 			restorePreferenceDefaults();
@@ -136,7 +134,7 @@ public class TaskTests extends AbstractAntTest {
 	public void testTaskDefinedInExtensionPoint() throws CoreException {
 		run("ExtensionPointTask.xml"); //$NON-NLS-1$
 		String msg = AntTestChecker.getDefault().getMessages().get(1);
-		assertEquals("Message incorrect: " + msg, "Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$ //$NON-NLS-2$
+		assertEquals("Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$
 		assertSuccessful();
 	}
 
@@ -144,10 +142,10 @@ public class TaskTests extends AbstractAntTest {
 	public void testTaskDefinedInExtensionPointHeadless() {
 		AntCorePlugin.getPlugin().setRunningHeadless(true);
 		try {
-			CoreException ce = assertThrows("Build should have failed as task was not defined to run in headless", //$NON-NLS-1$
-					CoreException.class, () -> run("ExtensionPointTask.xml")); //$NON-NLS-1$
-			assertTrue("Exception from undefined task is incorrect", ce.getMessage().trim() //$NON-NLS-1$
-					.endsWith("Action: Check that any <presetdef>/<macrodef> declarations have taken place.")); //$NON-NLS-1$
+			CoreException ce = assertThrows(CoreException.class, () -> run("ExtensionPointTask.xml"), //$NON-NLS-1$
+					"Build should have failed as task was not defined to run in headless"); //$NON-NLS-1$
+			assertThat(ce.getMessage().trim()).as("exception from undefined type") //$NON-NLS-1$
+					.endsWith("Action: Check that any <presetdef>/<macrodef> declarations have taken place."); //$NON-NLS-1$
 		} finally {
 			AntCorePlugin.getPlugin().setRunningHeadless(false);
 		}
@@ -157,7 +155,7 @@ public class TaskTests extends AbstractAntTest {
 	public void testTaskDefinedInExtensionPointWithURI() throws CoreException {
 		run("ExtensionPointTask.xml"); //$NON-NLS-1$
 		String msg = AntTestChecker.getDefault().getMessages().get(2);
-		assertEquals("Message incorrect: " + msg, "Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$ //$NON-NLS-2$
+		assertEquals("Testing Ant in Eclipse with a custom task", msg); //$NON-NLS-1$
 		assertSuccessful();
 	}
 }

@@ -13,7 +13,9 @@
  *******************************************************************************/
 package org.eclipse.compare.tests;
 
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.regex.Matcher;
@@ -21,12 +23,17 @@ import java.util.regex.Pattern;
 
 import org.eclipse.compare.ICompareFilter;
 import org.eclipse.compare.ISharedDocumentAdapter;
-import org.eclipse.compare.structuremergeviewer.*;
+import org.eclipse.compare.structuremergeviewer.DocumentRangeNode;
+import org.eclipse.compare.structuremergeviewer.IStructureComparator;
+import org.eclipse.compare.structuremergeviewer.StructureCreator;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.jface.text.*;
-import org.junit.Assert;
-import org.junit.Test;
+import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocument;
+import org.eclipse.jface.text.IRegion;
+import org.eclipse.jface.text.Region;
+import org.junit.jupiter.api.Test;
 
 public class StructureCreatorTest {
 
@@ -126,7 +133,7 @@ public class StructureCreatorTest {
 		} };
 
 		StructureCreator creator = new StructureCreator() {
-			private Pattern whitespace = Pattern.compile("\\s+");
+			private final Pattern whitespace = Pattern.compile("\\s+");
 			private Matcher matcher = null;
 
 			@Override
@@ -173,8 +180,8 @@ public class StructureCreatorTest {
 					r = new DocumentRangeNode(1, "ID", docs[j], 0,
 							docs[j].getLength());
 					creator.contentsEquals(l, 'L', r, 'R', true, filter);
-					Assert.assertFalse(creator.contentsEquals(l, 'L', r, 'R', false, filter));
-					Assert.assertTrue(creator.contentsEquals(l, 'L', r, 'R', true, filter));
+					assertFalse(creator.contentsEquals(l, 'L', r, 'R', false, filter));
+					assertTrue(creator.contentsEquals(l, 'L', r, 'R', true, filter));
 			}
 	}
 }

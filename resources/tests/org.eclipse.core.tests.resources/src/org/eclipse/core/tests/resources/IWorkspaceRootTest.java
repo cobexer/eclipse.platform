@@ -13,53 +13,77 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.harness.FileSystemHelper.getTempDir;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInFileSystem;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createUniqueString;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.removeFromWorkspace;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
+
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.URIUtil;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.internal.resources.Workspace;
+import org.eclipse.core.resources.IContainer;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IWorkspaceRunnable;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform.OS;
+import org.eclipse.core.runtime.QualifiedName;
 import org.eclipse.core.tests.internal.filesystem.wrapper.WrapperFileSystem;
+import org.junit.Rule;
+import org.junit.Test;
 
-public class IWorkspaceRootTest extends ResourceTest {
+public class IWorkspaceRootTest {
+
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
 
 	/**
 	 * Tests findFilesForLocation when non-canonical paths are used (bug 155101).
 	 */
-	public void testFindFilesNonCanonicalPath() {
-		// this test is for windows only
-		if (!isWindows()) {
-			return;
-		}
+	@Test
+	public void testFindFilesNonCanonicalPath() throws Exception {
+		assumeTrue("only relevant on Windows", OS.isWindows());
+
 		IProject project = getWorkspace().getRoot().getProject("testFindFilesNonCanonicalPath");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 
 		IFile link = project.getFile("file.txt");
-		IFileStore fileStore = getTempStore();
-		createFileInFileSystem(fileStore);
+		IFileStore fileStore = workspaceRule.getTempStore();
+		createInFileSystem(fileStore);
 		assertEquals("0.1", EFS.SCHEME_FILE, fileStore.getFileSystem().getScheme());
 		IPath fileLocationLower = URIUtil.toPath(fileStore.toURI());
 		fileLocationLower = fileLocationLower.setDevice(fileLocationLower.getDevice().toLowerCase());
 		IPath fileLocationUpper = fileLocationLower.setDevice(fileLocationLower.getDevice().toUpperCase());
 		//create the link with lower case device
-		try {
-			link.createLink(fileLocationLower, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+		link.createLink(fileLocationLower, IResource.NONE, createTestMonitor());
+
 		//try to find the file using the upper case device
 		IFile[] files = getWorkspace().getRoot().findFilesForLocation(fileLocationUpper);
-		assertEquals("1.0", 1, files.length);
-		assertEquals("1.1", link, files[0]);
+		assertThat(files).containsExactly(link);
 	}
 
 	/**
 	 * Tests the API method findContainersForLocation.
 	 */
-	public void testFindContainersForLocation() {
+	@Test
+	public void testFindContainersForLocation() throws Exception {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IProject p1 = root.getProject("p1");
 		IProject p2 = root.getProject("p2");
@@ -72,48 +96,36 @@ public class IWorkspaceRootTest extends ResourceTest {
 		project.move(projectDesc, IResource.REPLACE, null);
 	}
 
-	public void testFindContainersForLocationOnWrappedFileSystem() {
+	@Test
+	public void testFindContainersForLocationOnWrappedFileSystem() throws Exception {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IProject p1 = root.getProject("p1");
 		IProject p2 = root.getProject("p2");
-		ensureExistsInWorkspace(new IResource[] {p1, p2}, true);
-		try {
-			replaceProject(p1, WrapperFileSystem.getWrappedURI(p1.getLocationURI()));
-		} catch (CoreException e) {
-			fail("0.1", e);
-		}
-		try {
-			replaceProject(p2, WrapperFileSystem.getWrappedURI(p2.getLocationURI()));
-		} catch (CoreException e) {
-			fail("0.2", e);
-		}
+		createInWorkspace(new IResource[] {p1, p2});
+		replaceProject(p1, WrapperFileSystem.getWrappedURI(p1.getLocationURI()));
+		replaceProject(p2, WrapperFileSystem.getWrappedURI(p2.getLocationURI()));
 		testFindContainersForLocation(p1, p2);
 	}
 
 	/**
 	 * Tests the API method findContainersForLocation.
 	 */
-	public void testFindContainersForLocation(IProject p1, IProject p2) {
+	private void testFindContainersForLocation(IProject p1, IProject p2) throws Exception {
 		//should find the workspace root
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IContainer[] result = root.findContainersForLocation(root.getLocation());
-		assertEquals("1.0", 1, result.length);
-		assertEquals("1.1", root, result[0]);
+		assertThat(result).containsExactly(root);
 
 		//deep linked resource
 		IFolder parent = p2.getFolder("parent");
 		IFolder link = parent.getFolder("link");
-		ensureExistsInWorkspace(new IResource[] {p1, p2, parent}, true);
-		try {
-			link.createLink(p1.getLocationURI(), IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+		createInWorkspace(new IResource[] {p1, p2, parent});
+		link.createLink(p1.getLocationURI(), IResource.NONE, createTestMonitor());
 		assertResources("2.0", p1, link, root.findContainersForLocation(p1.getLocation()));
 
 		//existing folder
 		IFolder existing = p2.getFolder("existing");
-		ensureExistsInWorkspace(existing, true);
+		createInWorkspace(existing);
 		assertResources("3.0", existing, root.findContainersForLocation(existing.getLocation()));
 		assertResources("3.1", existing, root.findContainersForLocationURI(existing.getLocationURI()));
 
@@ -127,29 +139,14 @@ public class IWorkspaceRootTest extends ResourceTest {
 		assertResources("3.5", nonExisting, root.findContainersForLocation(nonExisting.getLocation().makeRelative()));
 
 		//relative URI is illegal
-		URI relative = null;
-		try {
-			relative = new URI(null, "hello", null);
-		} catch (URISyntaxException e) {
-			fail("4.99", e);
-		}
-		try {
-			root.findContainersForLocationURI(relative);
-			//should fail
-			fail("4.1");
-		} catch (RuntimeException e) {
-			//expected
-		}
+		URI relative = new URI(null, "hello", null);
+		assertThrows(RuntimeException.class, () -> root.findContainersForLocationURI(relative));
 		//linked folder that does not overlap a project location
 		IFolder otherLink = p1.getFolder("otherLink");
-		IFileStore linkStore = getTempStore();
+		IFileStore linkStore = workspaceRule.getTempStore();
 		URI location = linkStore.toURI();
-		try {
-			linkStore.mkdir(EFS.NONE, getMonitor());
-			otherLink.createLink(location, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("5.99", e);
-		}
+		linkStore.mkdir(EFS.NONE, createTestMonitor());
+		otherLink.createLink(location, IResource.NONE, createTestMonitor());
 		result = root.findContainersForLocationURI(location);
 		assertResources("5.1", otherLink, result);
 
@@ -164,23 +161,21 @@ public class IWorkspaceRootTest extends ResourceTest {
 	/**
 	 * Tests the API method findFilesForLocation.
 	 */
-	public void testFindFilesForLocationOnWrappedFileSystem() {
+	@Test
+	public void testFindFilesForLocationOnWrappedFileSystem() throws CoreException {
 		//should not find the workspace root
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IProject project = root.getProject("p1");
-		ensureExistsInWorkspace(project, true);
-		try {
-			replaceProject(project, WrapperFileSystem.getWrappedURI(project.getLocationURI()));
-		} catch (CoreException e) {
-			fail("0.1", e);
-		}
+		createInWorkspace(project);
+		replaceProject(project, WrapperFileSystem.getWrappedURI(project.getLocationURI()));
 		testFindFilesForLocation(project);
 	}
 
 	/**
 	 * Tests the API method findFilesForLocation on non-default file system.
 	 */
-	public void testFindFilesForLocation() {
+	@Test
+	public void testFindFilesForLocation() throws CoreException {
 		//should not find the workspace root
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		testFindFilesForLocation(root.getProject("p1"));
@@ -189,14 +184,14 @@ public class IWorkspaceRootTest extends ResourceTest {
 	/**
 	 * Tests the API method findFilesForLocation.
 	 */
-	public void testFindFilesForLocation(IProject project) {
+	private void testFindFilesForLocation(IProject project) throws CoreException {
 		//should not find the workspace root
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IFile[] result = root.findFilesForLocation(root.getLocation());
-		assertEquals("1.0", 0, result.length);
+		assertThat(result).isEmpty();
 
 		IFile existing = project.getFile("file1");
-		ensureExistsInWorkspace(existing, true);
+		createInWorkspace(existing);
 
 		//existing file
 		final IPath existingFileLocation = existing.getLocation();
@@ -219,8 +214,8 @@ public class IWorkspaceRootTest extends ResourceTest {
 		assertResources("4.1", nonExisting, result);
 
 		//existing file with different case
-		if (!isCaseSensitive(existing)) {
-			IPath differentCase = new Path(existingFileLocation.toOSString().toUpperCase());
+		if (!Workspace.caseSensitive) {
+			IPath differentCase = IPath.fromOSString(existingFileLocation.toOSString().toUpperCase());
 			result = root.findFilesForLocation(differentCase);
 			assertResources("5.0", existing, result);
 			result = root.findFilesForLocationURI(existing.getLocationURI());
@@ -229,14 +224,10 @@ public class IWorkspaceRootTest extends ResourceTest {
 
 		//linked resource
 		IFolder link = project.getFolder("link");
-		IFileStore linkStore = getTempStore();
+		IFileStore linkStore = workspaceRule.getTempStore();
 		URI location = linkStore.toURI();
-		try {
-			linkStore.mkdir(EFS.NONE, getMonitor());
-			link.createLink(location, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("5.99", e);
-		}
+		linkStore.mkdir(EFS.NONE, createTestMonitor());
+		link.createLink(location, IResource.NONE, createTestMonitor());
 		IFile child = link.getFile("link-child.txt");
 		URI childLocation = linkStore.getChild(child.getName()).toURI();
 		result = root.findFilesForLocationURI(childLocation);
@@ -245,32 +236,22 @@ public class IWorkspaceRootTest extends ResourceTest {
 
 	/**
 	 * Asserts that the given result array contains only the given resource.
-	 * @param string
-	 * @param file1
-	 * @param result
 	 */
 	private void assertResources(String message, IResource expected, IResource[] actual) {
-		assertEquals(message, 1, actual.length);
-		assertEquals(message, expected, actual[0]);
+		assertThat(actual).describedAs(message).containsExactly(expected);
 	}
 
 	/**
 	 * Asserts that the given result array contains only the two given resources
 	 */
 	private void assertResources(String message, IResource expected0, IResource expected1, IResource[] actual) {
-		assertEquals(message, 2, actual.length);
-		if (actual[0].equals(expected0)) {
-			assertEquals(message, expected1, actual[1]);
-		} else if (actual[0].equals(expected1)) {
-			assertEquals(message, expected0, actual[1]);
-		} else {
-			assertEquals(message, expected0, actual[0]);
-		}
+		assertThat(actual).describedAs(message).containsExactlyInAnyOrder(expected0, expected1);
 	}
 
 	/**
 	 * Tests the API method getContainerForLocation.
 	 */
+	@Test
 	public void testGetContainerForLocation() {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		assertEquals("1.0", root, root.getContainerForLocation(root.getLocation()));
@@ -279,44 +260,35 @@ public class IWorkspaceRootTest extends ResourceTest {
 	/**
 	 * Tests the AP method getFile(IPath)
 	 */
+	@Test
 	public void testGetFile() {
 		IWorkspaceRoot root = getWorkspace().getRoot();
-		IFile file = root.getFile(new Path("//P1/a.txt"));
+		IFile file = root.getFile(IPath.fromOSString("//P1/a.txt"));
 		assertTrue("1.0", !file.getFullPath().isUNC());
 	}
 
 	/**
 	 * Tests the API method getFileForLocation
 	 */
+	@Test
 	public void testGetFileForLocation() {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		assertTrue("1.0", root.getFileForLocation(root.getLocation()) == null);
 	}
 
-	public void testPersistentProperty() {
+	@Test
+	public void testPersistentProperty() throws CoreException {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		String value = "this is a test property value";
 		QualifiedName name = new QualifiedName("test", "testProperty");
-		try {
-			root.setPersistentProperty(name, value);
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		root.setPersistentProperty(name, value);
 
-		try {
-			String storedValue = root.getPersistentProperty(name);
-			assertEquals("2.0", value, storedValue);
-		} catch (CoreException e) {
-			fail("2.1", e);
-		}
+		String storedValue = root.getPersistentProperty(name);
+		assertEquals("2.0", value, storedValue);
 
-		try {
-			name = new QualifiedName("test", "testNonProperty");
-			String storedValue = root.getPersistentProperty(name);
-			assertEquals("3.0", null, storedValue);
-		} catch (CoreException e) {
-			fail("3.1", e);
-		}
+		name = new QualifiedName("test", "testNonProperty");
+		storedValue = root.getPersistentProperty(name);
+		assertEquals("3.0", null, storedValue);
 	}
 
 	/**
@@ -324,114 +296,85 @@ public class IWorkspaceRootTest extends ResourceTest {
 	 * operation, try it inside an operation to make sure it still works.
 	 * (See bug 14179).
 	 */
-	public void testPersistentPropertyInRunnable() {
+	@Test
+	public void testPersistentPropertyInRunnable() throws CoreException {
 		final IWorkspaceRoot root = getWorkspace().getRoot();
 		final String value = "this is a test property value";
 		final QualifiedName name = new QualifiedName("test", "testProperty");
-		try {
-			getWorkspace().run((IWorkspaceRunnable) monitor -> root.setPersistentProperty(name, value), getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		getWorkspace().run((IWorkspaceRunnable) monitor -> root.setPersistentProperty(name, value), createTestMonitor());
 
-		try {
-			final String[] storedValue = new String[1];
-			getWorkspace().run((IWorkspaceRunnable) monitor -> storedValue[0] = root.getPersistentProperty(name), getMonitor());
-			assertEquals("2.0", value, storedValue[0]);
-		} catch (CoreException e) {
-			fail("2.1", e);
-		}
+		final String[] storedValue = new String[1];
+		getWorkspace().run((IWorkspaceRunnable) monitor -> storedValue[0] = root.getPersistentProperty(name),
+				createTestMonitor());
+		assertEquals("2.0", value, storedValue[0]);
 
-		try {
-			final QualifiedName name2 = new QualifiedName("test", "testNonProperty");
-			final String[] storedValue = new String[1];
-			getWorkspace().run((IWorkspaceRunnable) monitor -> storedValue[0] = root.getPersistentProperty(name2), getMonitor());
-			assertEquals("3.0", null, storedValue[0]);
-		} catch (CoreException e) {
-			fail("3.1", e);
-		}
+		final QualifiedName name2 = new QualifiedName("test", "testNonProperty");
+		final String[] changedStoredValue = new String[1];
+		getWorkspace().run((IWorkspaceRunnable) monitor -> changedStoredValue[0] = root.getPersistentProperty(name2),
+				createTestMonitor());
+		assertEquals("3.0", null, changedStoredValue[0]);
 	}
 
-	public void testRefreshLocal() {
+	@Test
+	public void testRefreshLocal() throws CoreException {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IProject project = root.getProject("Project");
-		ensureExistsInWorkspace(project, true);
-		try {
-			project.close(getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		createInWorkspace(project);
+		project.close(createTestMonitor());
 		//refreshing the root shouldn't fail
-		try {
-			root.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.1", e);
-		}
+		root.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
 	}
 
-	public void testBug234343_folderInHiddenProject() {
+	@Test
+	public void testBug234343_folderInHiddenProject() throws CoreException {
 		IWorkspaceRoot root = getWorkspace().getRoot();
-		IProject hiddenProject = root.getProject(getUniqueString());
-		ensureDoesNotExistInWorkspace(hiddenProject);
-		try {
-			hiddenProject.create(null, IResource.HIDDEN, getMonitor());
-			hiddenProject.open(getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IProject hiddenProject = root.getProject(createUniqueString());
+		removeFromWorkspace(hiddenProject);
+		hiddenProject.create(null, IResource.HIDDEN, createTestMonitor());
+		hiddenProject.open(createTestMonitor());
 
 		IFolder folder = hiddenProject.getFolder("foo");
-		try {
-			folder.create(true, true, getMonitor());
-		} catch (CoreException e) {
-			fail("4.99", e);
-		}
+		folder.create(true, true, createTestMonitor());
 
 		IContainer[] containers = root.findContainersForLocationURI(folder.getLocationURI());
-		assertEquals("2.0", 0, containers.length);
+		assertThat(containers).isEmpty();
 
 		containers = root.findContainersForLocationURI(folder.getLocationURI(), IContainer.INCLUDE_HIDDEN);
-		assertEquals("3.0", 1, containers.length);
+		assertThat(containers).hasSize(1);
 	}
 
-	public void testBug234343_fileInHiddenProject() {
+	@Test
+	public void testBug234343_fileInHiddenProject() throws CoreException {
 		IWorkspaceRoot root = getWorkspace().getRoot();
-		IProject hiddenProject = root.getProject(getUniqueString());
-		ensureDoesNotExistInWorkspace(hiddenProject);
-		try {
-			hiddenProject.create(null, IResource.HIDDEN, getMonitor());
-			hiddenProject.open(getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IProject hiddenProject = root.getProject(createUniqueString());
+		removeFromWorkspace(hiddenProject);
+		hiddenProject.create(null, IResource.HIDDEN, createTestMonitor());
+		hiddenProject.open(createTestMonitor());
 
 		IFile file = hiddenProject.getFile("foo");
-		try {
-			file.create(new ByteArrayInputStream("foo".getBytes()), true, getMonitor());
-		} catch (CoreException e) {
-			fail("2.0", e);
-		}
+		file.create(new ByteArrayInputStream("foo".getBytes()), true, createTestMonitor());
 
 		IFile[] files = root.findFilesForLocationURI(file.getLocationURI());
-		assertEquals("3.0", 0, files.length);
+		assertThat(files).isEmpty();
 
 		files = root.findFilesForLocationURI(file.getLocationURI(), IContainer.INCLUDE_HIDDEN);
-		assertEquals("4.0", 1, files.length);
+		assertThat(files).hasSize(1);
 
 		IContainer[] containers = root.findContainersForLocationURI(file.getLocationURI());
-		assertEquals("5.0", 0, containers.length);
+		assertThat(containers).isEmpty();
 
 		containers = root.findContainersForLocationURI(file.getLocationURI(), IContainer.INCLUDE_HIDDEN);
-		assertEquals("6.0", 1, containers.length);
+		assertThat(containers).hasSize(1);
 	}
 
 	/**
 	 * Regression test for bug 476585: IWorkspaceRoot#getFileForLocation(IPath) should return IFile in nested project
 	 */
-	public void testBug476585() {
+	@Test
+	public void testBug476585() throws CoreException {
 		IWorkspaceRoot root = getWorkspace().getRoot();
 		IProject project = root.getProject("a");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 
 		String subProjectName = "subProject";
 		IPath subProjectLocation = project.getLocation().append(subProjectName);
@@ -448,11 +391,7 @@ public class IWorkspaceRootTest extends ResourceTest {
 		IProjectDescription newProjectDescription = getWorkspace().newProjectDescription(subProjectName);
 		newProjectDescription.setLocation(subProjectLocation);
 
-		try {
-			subProject.create(newProjectDescription, getMonitor());
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+		subProject.create(newProjectDescription, createTestMonitor());
 
 		file = root.getFileForLocation(fileLocation);
 		assertNotNull("2.0", file);
@@ -466,7 +405,8 @@ public class IWorkspaceRootTest extends ResourceTest {
 	/*
 	* see bug 232765 for details
 	*/
-	public void testFindMethodsWithHiddenAndTeamPrivateFlags() {
+	@Test
+	public void testFindMethodsWithHiddenAndTeamPrivateFlags() throws Exception {
 		checkFindMethods(IResource.NONE, new int[][] {{IResource.NONE, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN | IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}});
 
 		checkFindMethods(IResource.HIDDEN, new int[][] {{IResource.NONE, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN | IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0}});
@@ -476,17 +416,13 @@ public class IWorkspaceRootTest extends ResourceTest {
 		checkFindMethods(IResource.TEAM_PRIVATE | IResource.HIDDEN, new int[][] {{IResource.NONE, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {IContainer.INCLUDE_HIDDEN | IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {IContainer.INCLUDE_TEAM_PRIVATE_MEMBERS, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0}});
 	}
 
-	public void checkFindMethods(int updateFlags, int[][] results) {
+	public void checkFindMethods(int updateFlags, int[][] results) throws Exception {
 		IWorkspaceRoot root = getWorkspace().getRoot();
-		IProject project = root.getProject(getUniqueString());
-		ensureDoesNotExistInWorkspace(project);
+		IProject project = root.getProject(createUniqueString());
+		removeFromWorkspace(project);
 
-		try {
-			project.create(null, IResource.NONE, getMonitor());
-			project.open(getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		project.create(null, IResource.NONE, createTestMonitor());
+		project.open(createTestMonitor());
 
 		// a team private folder
 		IFolder teamFolder = createFolder(project, IResource.TEAM_PRIVATE, false);
@@ -538,53 +474,42 @@ public class IWorkspaceRootTest extends ResourceTest {
 
 	private void checkFindFiles(URI location, int memberFlags, int foundResources) {
 		IFile[] files = getWorkspace().getRoot().findFilesForLocationURI(location, memberFlags);
-		assertEquals(foundResources, files.length);
+		assertThat(files).hasSize(foundResources);
 	}
 
 	private void checkFindContainers(URI location, int memberFlags, int foundResources) {
 		IContainer[] containers = getWorkspace().getRoot().findContainersForLocationURI(location, memberFlags);
-		assertEquals(foundResources, containers.length);
+		assertThat(containers).hasSize(foundResources);
 	}
 
-	private IFile createFile(IContainer parent, int updateFlags, boolean linked) {
-		IFile file = parent.getFile(new Path(getUniqueString()));
-		try {
-			if (linked) {
-				try {
-					IPath path = getTempDir().append(getUniqueString());
-					path.toFile().createNewFile();
-					file.createLink(URIUtil.toURI(path), updateFlags, getMonitor());
-					if ((updateFlags & IResource.TEAM_PRIVATE) == IResource.TEAM_PRIVATE) {
-						file.setTeamPrivateMember(true);
-					}
-				} catch (IOException e) {
-					fail("Can't create the file", e);
-				}
-			} else {
-				file.create(new ByteArrayInputStream("content".getBytes()), updateFlags, getMonitor());
+	private IFile createFile(IContainer parent, int updateFlags, boolean linked) throws Exception {
+		IFile file = parent.getFile(IPath.fromOSString(createUniqueString()));
+		if (linked) {
+			IPath path = getTempDir().append(createUniqueString());
+			path.toFile().createNewFile();
+			file.createLink(URIUtil.toURI(path), updateFlags, createTestMonitor());
+			if ((updateFlags & IResource.TEAM_PRIVATE) == IResource.TEAM_PRIVATE) {
+				file.setTeamPrivateMember(true);
 			}
-		} catch (CoreException e) {
-			fail("Can't create the file", e);
+		} else {
+			file.create("content".getBytes(), updateFlags, createTestMonitor());
 		}
 		return file;
 	}
 
-	private IFolder createFolder(IContainer parent, int updateFlags, boolean linked) {
-		IFolder folder = parent.getFolder(new Path(getUniqueString()));
-		try {
-			if (linked) {
-				IPath path = getTempDir().append(getUniqueString());
-				path.toFile().mkdir();
-				folder.createLink(URIUtil.toURI(path), updateFlags, getMonitor());
-				if ((updateFlags & IResource.TEAM_PRIVATE) == IResource.TEAM_PRIVATE) {
-					folder.setTeamPrivateMember(true);
-				}
-			} else {
-				folder.create(updateFlags, true, getMonitor());
+	private IFolder createFolder(IContainer parent, int updateFlags, boolean linked) throws CoreException {
+		IFolder folder = parent.getFolder(IPath.fromOSString(createUniqueString()));
+		if (linked) {
+			IPath path = getTempDir().append(createUniqueString());
+			path.toFile().mkdir();
+			folder.createLink(URIUtil.toURI(path), updateFlags, createTestMonitor());
+			if ((updateFlags & IResource.TEAM_PRIVATE) == IResource.TEAM_PRIVATE) {
+				folder.setTeamPrivateMember(true);
 			}
-		} catch (CoreException e) {
-			fail("Can't create the folder", e);
+		} else {
+			folder.create(updateFlags, true, createTestMonitor());
 		}
 		return folder;
 	}
+
 }

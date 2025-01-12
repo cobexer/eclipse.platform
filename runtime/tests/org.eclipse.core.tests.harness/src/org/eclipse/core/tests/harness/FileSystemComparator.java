@@ -35,9 +35,9 @@ public class FileSystemComparator {
 
 	private static class FileSummary {
 		boolean directory;
-		private String path;
-		private long size;
-		private long timestamp;
+		private final String path;
+		private final long size;
+		private final long timestamp;
 
 		FileSummary(File file) {
 			if (!file.exists()) {
@@ -123,17 +123,15 @@ public class FileSystemComparator {
 
 	public void saveSnapshot(Object toSave, File rootLocation) throws IOException {
 		File summaryFile = new File(rootLocation, SNAPSHOT_FILE_NAME);
-		PrintWriter out = new PrintWriter(new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(summaryFile))));
-		Map<?, ?> snapshot = (Map<?, ?>) toSave;
-		try {
+		try (PrintWriter out = new PrintWriter(
+				new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(summaryFile))))) {
+			Map<?, ?> snapshot = (Map<?, ?>) toSave;
 			for (Object element : snapshot.values()) {
 				FileSummary fileSummary = (FileSummary) element;
 				out.println(fileSummary.getPath());
 				out.println(fileSummary.getTimestamp());
 				out.println(fileSummary.getSize());
 			}
-		} finally {
-			out.close();
 		}
 	}
 

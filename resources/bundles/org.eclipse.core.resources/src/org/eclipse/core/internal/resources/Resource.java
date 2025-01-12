@@ -25,18 +25,55 @@ package org.eclipse.core.internal.resources;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
-import org.eclipse.core.filesystem.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileInfo;
+import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.URIUtil;
 import org.eclipse.core.filesystem.provider.FileInfo;
 import org.eclipse.core.internal.events.LifecycleEvent;
 import org.eclipse.core.internal.localstore.FileSystemResourceManager;
 import org.eclipse.core.internal.properties.IPropertyManager;
-import org.eclipse.core.internal.utils.*;
-import org.eclipse.core.internal.watson.*;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.internal.utils.FileUtil;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.internal.utils.WrappedRuntimeException;
+import org.eclipse.core.internal.watson.ElementTreeIterator;
+import org.eclipse.core.internal.watson.IElementContentVisitor;
+import org.eclipse.core.internal.watson.IPathRequestor;
+import org.eclipse.core.resources.FileInfoMatcherDescription;
+import org.eclipse.core.resources.IContainer;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IPathVariableManager;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceProxy;
+import org.eclipse.core.resources.IResourceProxyVisitor;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.IResourceVisitor;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.ResourceAttributes;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.resources.team.IMoveDeleteHook;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.PlatformObject;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.MultiRule;
 import org.eclipse.osgi.util.NLS;
@@ -125,10 +162,8 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 			checkAccessible(flags);
 
 		// Check that this resource matches the member flags
-		if (!isMember(flags, memberFlags))
-			return;
 		// Visit this resource.
-		if (!visitor.visit(this) || depth == DEPTH_ZERO)
+		if (!isMember(flags, memberFlags) || !visitor.visit(this) || depth == DEPTH_ZERO)
 			return;
 		// Get the info again because it might have been changed by the visitor.
 		info = getResourceInfo(includePhantoms, false);
@@ -157,7 +192,6 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 	/**
 	 * Throws an exception if the link preconditions are not met.  Returns the file info
 	 * for the file being linked to, or <code>null</code> if not available.
-	 * @throws CoreException
 	 */
 	protected IFileInfo assertLinkRequirements(URI localLocation, int updateFlags) throws CoreException {
 		boolean allowMissingLocal = (updateFlags & IResource.ALLOW_MISSING_LOCAL) != 0;
@@ -273,7 +307,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 				throw new ResourceException(IResourceStatus.FAILED_READ_LOCAL, getFullPath(), message, null);
 			}
 			URI destLocation = dest.getLocationURI();
-			if (destLocation == null && (dest.isUnderVirtual() == false)) {
+			if (destLocation == null && !dest.isUnderVirtual()) {
 				message = NLS.bind(Messages.localstore_locationUndefined, dest.getFullPath());
 				throw new ResourceException(IResourceStatus.FAILED_READ_LOCAL, dest.getFullPath(), message, null);
 			}
@@ -410,7 +444,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 				throw new ResourceException(IResourceStatus.FAILED_READ_LOCAL, getFullPath(), message, null);
 			}
 			URI destLocation = dest.getLocationURI();
-			if (destLocation == null && (dest.isUnderVirtual() == false)) {
+			if (destLocation == null && !dest.isUnderVirtual()) {
 				message = NLS.bind(Messages.localstore_locationUndefined, dest.getFullPath());
 				throw new ResourceException(IResourceStatus.FAILED_READ_LOCAL, dest.getFullPath(), message, null);
 			}
@@ -477,10 +511,8 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 
 	@Override
 	public boolean contains(ISchedulingRule rule) {
-		if (this == rule)
-			return true;
 		// Must allow notifications to nest in all resource rules.
-		if (rule.getClass().equals(WorkManager.NotifyRule.class))
+		if ((this == rule) || rule.getClass().equals(WorkManager.NotifyRule.class))
 			return true;
 		if (rule instanceof MultiRule) {
 			MultiRule multi = (MultiRule) rule;
@@ -501,7 +533,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 	}
 
 	/**
-	 * @throws CoreException
+	 * @throws CoreException in overloads
 	 */
 	public void convertToPhantom() throws CoreException {
 		ResourceInfo info = getResourceInfo(false, true);
@@ -567,7 +599,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 			workspace.prepareOperation(workspace.getRoot(), split);
 			// The following assert method throws CoreExceptions as stated in the IResource.copy API
 			// and assert for programming errors. See checkCopyRequirements for more information.
-			IPath destPath = new Path(destDesc.getName()).makeAbsolute();
+			IPath destPath = IPath.fromOSString(destDesc.getName()).makeAbsolute();
 			assertCopyRequirements(destPath, getType(), updateFlags);
 			Project destProject = (Project) workspace.getRoot().getProject(destPath.lastSegment());
 			workspace.beginOperation(true);
@@ -971,7 +1003,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 		if (info != null && info.isSet(M_PHANTOM))
 			return null;
 		// Resort to slow lookup to find exact case variant.
-		IPath result = Path.ROOT;
+		IPath result = IPath.ROOT;
 		int segmentCount = target.segmentCount();
 		for (int i = 0; i < segmentCount; i++) {
 			String[] childNames = workspace.tree.getNamesOfChildren(result);
@@ -1263,10 +1295,8 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 
 	@Override
 	public boolean isConflicting(ISchedulingRule rule) {
-		if (this == rule)
-			return true;
 		// Must not schedule at same time as notification.
-		if (rule.getClass().equals(WorkManager.NotifyRule.class))
+		if ((this == rule) || rule.getClass().equals(WorkManager.NotifyRule.class))
 			return true;
 		if (rule instanceof MultiRule) {
 			MultiRule multi = (MultiRule) rule;
@@ -1563,9 +1593,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 		SubMonitor split = progress.split(1);
 		try {
 			workspace.prepareOperation(rule, split);
-			if (!isRoot && !getProject().isAccessible())
-				return;
-			if (!exists() && isFiltered())
+			if ((!isRoot && !getProject().isAccessible()) || (!exists() && isFiltered()))
 				return;
 			workspace.beginOperation(true);
 			if (getType() == IResource.PROJECT || getType() == IResource.ROOT)
@@ -1929,9 +1957,7 @@ public abstract class Resource extends PlatformObject implements IResource, ICor
 		if (project == null)
 			return false;
 		final ProjectDescription description = project.internalGetDescription();
-		if (description == null)
-			return false;
-		if (description.getFilters() == null)
+		if ((description == null) || (description.getFilters() == null))
 			return false;
 
 		Resource currentResource = this;

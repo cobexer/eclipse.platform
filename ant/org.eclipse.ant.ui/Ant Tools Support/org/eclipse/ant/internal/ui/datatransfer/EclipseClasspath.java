@@ -15,6 +15,7 @@
 
 package org.eclipse.ant.internal.ui.datatransfer;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.net.URI;
 import java.util.ArrayList;
@@ -30,7 +31,6 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.jdt.core.IClasspathContainer;
 import org.eclipse.jdt.core.IClasspathEntry;
@@ -57,7 +57,7 @@ public class EclipseClasspath {
 	protected List<String> rawClassPathEntries = new ArrayList<>();
 	protected List<String> rawClassPathEntriesAbsolute = new ArrayList<>();
 
-	private IJavaProject project;
+	private final IJavaProject project;
 
 	private static Map<String, IClasspathContainer> userLibraryCache = new HashMap<>();
 
@@ -399,7 +399,6 @@ public class EclipseClasspath {
 
 	/**
 	 * Check if given string is a library reference. e.g. Plug-in dependencies are library references.
-	 * 
 	 */
 	public static boolean isLibraryReference(String s) {
 		return s.startsWith("${") && s.endsWith(".libraryclasspath}"); //$NON-NLS-1$ //$NON-NLS-2$ 
@@ -427,7 +426,6 @@ public class EclipseClasspath {
 
 	/**
 	 * Check if given string is a linked resource.
-	 * 
 	 */
 	public static boolean isLinkedResource(String s) {
 		return s.startsWith("${") && s.endsWith(".link}"); //$NON-NLS-1$ //$NON-NLS-2$ 
@@ -467,7 +465,9 @@ public class EclipseClasspath {
 	 */
 	private IClasspathEntry convertVariableClasspathEntry(IRuntimeClasspathEntry entry) {
 		try {
-			Document doc = ExportUtil.parseXmlString(entry.getMemento());
+			ByteArrayInputStream is = new ByteArrayInputStream(entry.getMemento().getBytes());
+			@SuppressWarnings("restriction")
+			Document doc = org.eclipse.core.internal.runtime.XmlProcessorFactory.parseWithErrorOnDOCTYPE(is);
 			Element element = (Element) doc.getElementsByTagName("memento").item(0); //$NON-NLS-1$
 			String variableString = element.getAttribute("variableString"); //$NON-NLS-1$
 			ExportUtil.addVariable(variable2valueMap, variableString, ExportUtil.getProjectRoot(project));
@@ -477,7 +477,7 @@ public class EclipseClasspath {
 			if (i != -1) {
 				variableString = variableString.substring(0, i) + variableString.substring(i + 1);
 			}
-			IPath path = new Path(variableString);
+			IPath path = IPath.fromOSString(variableString);
 			return JavaCore.newVariableEntry(path, null, null);
 		}
 		catch (Exception e) {

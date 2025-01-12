@@ -49,6 +49,7 @@ import org.apache.tools.ant.Target;
 import org.apache.tools.ant.Task;
 import org.apache.tools.ant.TaskAdapter;
 import org.apache.tools.ant.UnknownElement;
+import org.apache.tools.ant.util.JavaEnvUtils;
 import org.eclipse.ant.core.AntCorePlugin;
 import org.eclipse.ant.core.AntCorePreferences;
 import org.eclipse.ant.core.AntSecurityException;
@@ -75,7 +76,6 @@ import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.content.IContentDescription;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences.IPreferenceChangeListener;
-import org.eclipse.core.runtime.preferences.IEclipsePreferences.PreferenceChangeEvent;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.core.variables.IStringVariableManager;
 import org.eclipse.core.variables.VariablesPlugin;
@@ -89,6 +89,17 @@ import org.xml.sax.SAXParseException;
 
 @SuppressWarnings("removal") // SecurityManager
 public class AntModel implements IAntModel {
+
+	private static final boolean IS_SECURITY_MANAGER_SUPPORTED = isSecurityManagerAllowed();
+
+	private static boolean isSecurityManagerAllowed() {
+		String sm = System.getProperty("java.security.manager"); //$NON-NLS-1$
+		if (sm == null) { // default is 'disallow' since 18 and was 'allow' before
+			return !JavaEnvUtils.isAtLeastJavaVersion("18"); //$NON-NLS-1$
+		}
+		// Value is either 'disallow' or 'allow' or specifies the SecurityManager class to set
+		return !"disallow".equals(sm); //$NON-NLS-1$
+	}
 
 	private static ClassLoader fgClassLoader;
 	private static int fgInstanceCount = 0;
@@ -132,31 +143,28 @@ public class AntModel implements IAntModel {
 	private AntEditorMarkerUpdater fMarkerUpdater = null;
 	private List<AntElementNode> fNonStructuralNodes = new ArrayList<>(1);
 
-	private IPreferenceChangeListener fCoreListener = event -> {
+	private final IPreferenceChangeListener fCoreListener = event -> {
 		if (IAntCoreConstants.PREFERENCE_CLASSPATH_CHANGED.equals(event.getKey())) {
-			if (Boolean.parseBoolean((String) event.getNewValue()) == true) {
+			if (Boolean.parseBoolean((String) event.getNewValue())) {
 				reconcileForPropertyChange(true);
 			}
 		}
 	};
-	private IPreferenceChangeListener fUIListener = new IPreferenceChangeListener() {
-		@Override
-		public void preferenceChange(PreferenceChangeEvent event) {
-			String property = event.getKey();
-			if (property.equals(AntEditorPreferenceConstants.PROBLEM)) {
-				IEclipsePreferences node = InstanceScope.INSTANCE.getNode(AntUIPlugin.PI_ANTUI);
-				if (node != null) {
-					node.removePreferenceChangeListener(fUIListener);
-					reconcileForPropertyChange(false);
-					node.addPreferenceChangeListener(fUIListener);
-				}
-			} else if (property.equals(AntEditorPreferenceConstants.CODEASSIST_USER_DEFINED_TASKS)) {
+	private final IPreferenceChangeListener fUIListener = event -> {
+		String property = event.getKey();
+		if (property.equals(AntEditorPreferenceConstants.PROBLEM)) {
+			IEclipsePreferences node = InstanceScope.INSTANCE.getNode(AntUIPlugin.PI_ANTUI);
+			if (node != null) {
+				node.removePreferenceChangeListener(this.fUIListener);
 				reconcileForPropertyChange(false);
-			} else if (property.equals(AntEditorPreferenceConstants.BUILDFILE_NAMES_TO_IGNORE)
-					|| property.equals(AntEditorPreferenceConstants.BUILDFILE_IGNORE_ALL)) {
-				fReportingProblemsCurrent = false;
-				reconcileForPropertyChange(false);
+				node.addPreferenceChangeListener(this.fUIListener);
 			}
+		} else if (property.equals(AntEditorPreferenceConstants.CODEASSIST_USER_DEFINED_TASKS)) {
+			reconcileForPropertyChange(false);
+		} else if (property.equals(AntEditorPreferenceConstants.BUILDFILE_NAMES_TO_IGNORE)
+				|| property.equals(AntEditorPreferenceConstants.BUILDFILE_IGNORE_ALL)) {
+			this.fReportingProblemsCurrent = false;
+			reconcileForPropertyChange(false);
 		}
 	};
 
@@ -367,8 +375,10 @@ public class AntModel implements IAntModel {
 				SecurityManager origSM = System.getSecurityManager();
 				processAntHome(true);
 				try {
-					// set a security manager to disallow system exit and system property setting
-					System.setSecurityManager(new AntSecurityManager(origSM, Thread.currentThread(), false));
+					if (IS_SECURITY_MANAGER_SUPPORTED) {
+						// set a security manager to disallow system exit and system property setting
+						System.setSecurityManager(new AntSecurityManager(origSM, Thread.currentThread(), false));
+					}
 					resolveBuildfile();
 					endReporting();
 					// clear the additional property-holder(s) to avoid potential memory leaks
@@ -378,12 +388,14 @@ public class AntModel implements IAntModel {
 					// do nothing
 				}
 				catch (UnsupportedOperationException ex) {
-					AntUIPlugin.log(new Status(IStatus.ERROR, AntUIPlugin.getUniqueIdentifier(), 0, AntModelMessages.AntModel_SecurityManagerError, null));
+					AntUIPlugin.log(new Status(IStatus.ERROR, AntUIPlugin.getUniqueIdentifier(), 0, AntModelMessages.AntModel_SecurityManagerError, ex));
 				}
 				finally {
 					Thread.currentThread().setContextClassLoader(originalClassLoader);
 					getClassLoader(null);
-					System.setSecurityManager(origSM);
+					if (System.getSecurityManager() instanceof AntSecurityManager) {
+						System.setSecurityManager(origSM);
+					}
 					project.fireBuildFinished(null); // cleanup (IntrospectionHelper)
 				}
 			}
@@ -554,9 +566,7 @@ public class AntModel implements IAntModel {
 
 	private void resolveBuildfile() {
 		Collection<AntTaskNode> nodeCopy = new ArrayList<>(fTaskNodes);
-		Iterator<AntTaskNode> iter = nodeCopy.iterator();
-		while (iter.hasNext()) {
-			AntTaskNode node = iter.next();
+		for (AntTaskNode node : nodeCopy) {
 			fNodeBeingResolved = node;
 			fNodeBeingResolvedIndex = -1;
 			if (node.configure(false)) {
@@ -1443,10 +1453,8 @@ public class AntModel implements IAntModel {
 		if (fCurrentNodeIdentifiers == null || fDefinerNodeIdentifierToDefinedTasks == null) {
 			return;
 		}
-		Iterator<String> iter = fDefinerNodeIdentifierToDefinedTasks.keySet().iterator();
 		ComponentHelper helper = ComponentHelper.getComponentHelper(fProjectNode.getProject());
-		while (iter.hasNext()) {
-			String key = iter.next();
+		for (String key : fDefinerNodeIdentifierToDefinedTasks.keySet()) {
 			if (fCurrentNodeIdentifiers.get(key) == null) {
 				removeDefinerTasks(key, helper.getAntTypeTable());
 			}
@@ -1583,9 +1591,7 @@ public class AntModel implements IAntModel {
 		}
 
 		Set<Task> nodes = fTaskToNode.keySet();
-		Iterator<Task> iter = nodes.iterator();
-		while (iter.hasNext()) {
-			Task task = iter.next();
+		for (Task task : nodes) {
 			Task tmptask = task;
 			if (tmptask instanceof UnknownElement) {
 				UnknownElement element = (UnknownElement) tmptask;
@@ -1724,9 +1730,7 @@ public class AntModel implements IAntModel {
 			fCurrentNodeIdentifiers.remove(identifier);
 		}
 		fDefinerNodeIdentifierToDefinedTasks.put(identifier, newTasks);
-		Iterator<String> iter = newTasks.iterator();
-		while (iter.hasNext()) {
-			String name = iter.next();
+		for (String name : newTasks) {
 			fTaskNameToDefiningNode.put(name, node);
 		}
 	}
@@ -1778,8 +1782,6 @@ public class AntModel implements IAntModel {
 
 	/**
 	 * Sets whether the AntModel should reconcile if it become dirty. If set to reconcile, a reconcile is triggered if the model is dirty.
-	 *
-	 * @param shouldReconcile
 	 */
 	public void setShouldReconcile(boolean shouldReconcile) {
 		fShouldReconcile = shouldReconcile;
@@ -1806,9 +1808,7 @@ public class AntModel implements IAntModel {
 	private String getUserPrefixMapping(String prefix) {
 		if (fNamespacePrefixMappings != null) {
 			Set<Entry<String, String>> entrySet = fNamespacePrefixMappings.entrySet();
-			Iterator<Entry<String, String>> entries = entrySet.iterator();
-			while (entries.hasNext()) {
-				Map.Entry<String, String> entry = entries.next();
+			for (Entry<String, String> entry : entrySet) {
 				if (entry.getValue().equals(prefix)) {
 					return entry.getKey();
 				}

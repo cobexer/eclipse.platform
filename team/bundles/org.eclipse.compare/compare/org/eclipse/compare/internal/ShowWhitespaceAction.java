@@ -27,7 +27,7 @@ public class ShowWhitespaceAction extends TextEditorPropertyAction {
 
 	private Map<MergeSourceViewer, WhitespaceCharacterPainter> fPainters;
 	private boolean isWhitespaceShowing;
-	private boolean[] fNeedsPainters;
+	private final boolean[] fNeedsPainters;
 	/** @since 3.7 */
 	private boolean fShowLeadingSpaces;
 	/** @since 3.7 */
@@ -51,7 +51,7 @@ public class ShowWhitespaceAction extends TextEditorPropertyAction {
 	/** @since 3.7 */
 	private boolean fShowLineFeed;
 	/** @since 3.7 */
-	private IPreferenceStore fStore = EditorsUI.getPreferenceStore();
+	private final IPreferenceStore fStore = EditorsUI.getPreferenceStore();
 	/** @since 3.7 */
 	private int fAlpha;
 
@@ -128,6 +128,9 @@ public class ShowWhitespaceAction extends TextEditorPropertyAction {
 			for (int i = 0; i < viewers.length; i++) {
 				if (fNeedsPainters[i]) {
 					MergeSourceViewer viewer = viewers[i];
+					if (viewer == null) {
+						continue;
+					}
 					SourceViewer sourceViewer = viewer.getSourceViewer();
 					WhitespaceCharacterPainter painter;
 					if (fStore != null) {

@@ -114,12 +114,12 @@ public class SynchronizeManager implements ISynchronizeManager {
 	/**
 	 * Contains the participant descriptions
 	 */
-	private SynchronizeParticipantRegistry participantRegistry = new SynchronizeParticipantRegistry();
+	private final SynchronizeParticipantRegistry participantRegistry = new SynchronizeParticipantRegistry();
 
 	/**
 	 * Contains the synchronize wizard descriptions
 	 */
-	private SynchronizeWizardRegistry wizardRegistry = new SynchronizeWizardRegistry();
+	private final SynchronizeWizardRegistry wizardRegistry = new SynchronizeWizardRegistry();
 
 	/**
 	 * Contains a table of the state saved between sessions for a participant. The set is keyed
@@ -163,6 +163,8 @@ public class SynchronizeManager implements ISynchronizeManager {
 				case REMOVED :
 					fListener.participantsRemoved(fChanged);
 					break;
+				default:
+					throw new IllegalArgumentException(Integer.toString(fType));
 			}
 		}
 
@@ -192,11 +194,11 @@ public class SynchronizeManager implements ISynchronizeManager {
 	 * only when the participant is required.
 	 */
 	private class ParticipantInstance implements ISynchronizeParticipantReference {
-		private Map<String, ISynchronizeParticipant> participants;
+		private final Map<String, ISynchronizeParticipant> participants;
 		private IMemento savedState;
-		private SynchronizeParticipantDescriptor descriptor;
-		private String secondaryId;
-		private String displayName;
+		private final SynchronizeParticipantDescriptor descriptor;
+		private final String secondaryId;
+		private final String displayName;
 		private boolean dead;
 
 		public ParticipantInstance(SynchronizeParticipantDescriptor descriptor, String secondaryId, String displayName, IMemento savedState) {
@@ -527,7 +529,7 @@ public class SynchronizeManager implements ISynchronizeManager {
 
 		if(perspectiveDescriptor != null) {
 
-			String message;;
+			String message;
 			String desc = perspectiveDescriptor.getDescription();
 			if (desc == null) {
 				message = NLS.bind(TeamUIMessages.SynchronizeManager_30, new String[] { perspectiveDescriptor.getLabel() });
@@ -542,16 +544,7 @@ public class SynchronizeManager implements ISynchronizeManager {
 						store,
 						IPreferenceIds.SYNCHRONIZING_COMPLETE_PERSPECTIVE);
 
-			int result = m.getReturnCode();
-			switch (result) {
-				// yes, ok
-				case IDialogConstants.YES_ID:
-				case IDialogConstants.OK_ID :
-					return true;
-				// no
-				case IDialogConstants.NO_ID :
-					return false;
-			}
+			return m.getReturnCode() == IDialogConstants.YES_ID;
 		}
 		return false;
 	}
@@ -581,7 +574,7 @@ public class SynchronizeManager implements ISynchronizeManager {
 	public void dispose() {
 		// save state and settings for existing participants.
 		saveState();
-		for (Object element : participantReferences.values()) {
+		for (ISynchronizeParticipantReference element : participantReferences.values()) {
 			ParticipantInstance ref = (ParticipantInstance) element;
 			if((ref).isInstantiated()) {
 				try {
@@ -630,7 +623,7 @@ public class SynchronizeManager implements ISynchronizeManager {
 	 */
 	private void saveState() {
 		XMLMemento xmlMemento = XMLMemento.createWriteRoot(CTX_PARTICIPANTS);
-		for (Object element : participantReferences.values()) {
+		for (ISynchronizeParticipantReference element : participantReferences.values()) {
 			ParticipantInstance ref = (ParticipantInstance) element;
 			// Participants can opt out of being saved between sessions
 			if(! ref.getDescriptor().isPersistent()) continue;

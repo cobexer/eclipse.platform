@@ -45,7 +45,7 @@ public class TeamCapabilityHelper {
 	 * Mapping from repository provider id to IPluginContribution.  Used for proper
 	 * activity mapping of natures.
 	 */
-	private Map<String, IPluginContribution> providerIdToPluginId;
+	private final Map<String, IPluginContribution> providerIdToPluginId;
 
 	/**
 	 * Singleton instance.
@@ -165,7 +165,6 @@ public class TeamCapabilityHelper {
 	 * @param project the project to query.
 	 * @return the provider id for this project or <code>null</code> if no providers are mapped
 	 * to this project
-	 * @throws CoreException
 	 */
 	public String getProviderIdFor(IProject project) throws CoreException {
 		if(project.isAccessible()) {

@@ -48,13 +48,13 @@ import org.eclipse.ltk.core.refactoring.RefactoringStatus;
 
 public class LaunchConfigurationBuildfileChange extends Change {
 
-	private ILaunchConfiguration fLaunchConfiguration;
-	private String fNewBuildfileLocation;
-	private String fNewProjectName;
+	private final ILaunchConfiguration fLaunchConfiguration;
+	private final String fNewBuildfileLocation;
+	private final String fNewProjectName;
 	private String fNewLaunchConfigurationName;
-	private String fOldBuildfileLocation;
-	private String fOldProjectName;
-	private ILaunchConfigurationWorkingCopy fNewLaunchConfiguration;
+	private final String fOldBuildfileLocation;
+	private final String fOldProjectName;
+	private final ILaunchConfigurationWorkingCopy fNewLaunchConfiguration;
 	private String fNewConfigContainerName;
 
 	/**
@@ -157,7 +157,6 @@ public class LaunchConfigurationBuildfileChange extends Change {
 	/**
 	 * Creates a new container name for the given configuration
 	 * 
-	 * @param launchConfiguration
 	 * @return the new container name
 	 * @since 3.5
 	 */

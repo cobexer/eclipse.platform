@@ -13,6 +13,10 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.ui.debug;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import org.eclipse.ant.internal.launching.debug.model.AntDebugTarget;
 import org.eclipse.ant.internal.launching.debug.model.AntLineBreakpoint;
 import org.eclipse.ant.internal.launching.debug.model.AntStackFrame;
@@ -24,7 +28,7 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.debug.core.DebugEvent;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
@@ -56,6 +60,10 @@ import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.console.IHyperlink;
 import org.eclipse.ui.internal.console.ConsoleHyperlinkPosition;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
 
 /**
  * Tests for launch configurations
@@ -65,16 +73,27 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 
 	public static final int DEFAULT_TIMEOUT = 20000;
 
+	private static boolean wasAutomatedModeEnabled;
+	private static boolean wasIgnoreErrorEnabled;
+
 	/**
 	 * The last relevant event set - for example, that caused a thread to suspend
 	 */
 	protected DebugEvent[] fEventSet;
 
-	public AbstractAntDebugTest(String name) {
-		super(name);
+	@BeforeClass
+	public static void setupClass() {
 		// set error dialog to non-blocking to avoid hanging the UI during test
+		wasAutomatedModeEnabled = ErrorDialog.AUTOMATED_MODE;
 		ErrorDialog.AUTOMATED_MODE = true;
+		wasIgnoreErrorEnabled = SafeRunnable.getIgnoreErrors();
 		SafeRunnable.setIgnoreErrors(true);
+	}
+
+	@AfterClass
+	public static void teardownClass() {
+		ErrorDialog.AUTOMATED_MODE = wasAutomatedModeEnabled;
+		SafeRunnable.setIgnoreErrors(wasIgnoreErrorEnabled);
 	}
 
 	/**
@@ -108,7 +127,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	/**
 	 * Returns the source folder with the given name in the given project.
 	 * 
-	 * @param project
 	 * @param name
 	 *            source folder name
 	 * @return package fragment root
@@ -147,8 +165,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * @param waiter
 	 *            the event waiter to use
 	 * @return Object the source of the event
-	 * @exception Exception
-	 *                if the event is never received.
 	 */
 	@Override
 	protected Object launchAndWait(ILaunchConfiguration configuration, DebugEventWaiter waiter) throws CoreException {
@@ -166,8 +182,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * @param register
 	 *            whether to register the launch
 	 * @return Object the source of the event
-	 * @exception Exception
-	 *                if the event is never received.
 	 */
 	protected Object launchAndWait(ILaunchConfiguration configuration, DebugEventWaiter waiter, boolean register) throws CoreException {
 		ILaunch launch = configuration.launch(ILaunchManager.DEBUG_MODE, null, false, register);
@@ -343,7 +357,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * @param bp
 	 *            the breakpoint that should cause a suspend event
 	 * @return thread in which the first suspend event occurred
-	 * @throws CoreException
 	 */
 	protected AntThread launchToLineBreakpoint(String buildFileName, ILineBreakpoint bp) throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration(buildFileName);
@@ -360,7 +373,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * @param bp
 	 *            the breakpoint that should cause a suspend event
 	 * @return thread in which the first suspend event occurred
-	 * @throws CoreException
 	 */
 	protected AntThread launchToLineBreakpoint(ILaunchConfiguration config, ILineBreakpoint bp) throws CoreException {
 		DebugEventWaiter waiter = new DebugElementKindEventDetailWaiter(DebugEvent.SUSPEND, AntThread.class, DebugEvent.BREAKPOINT);
@@ -422,7 +434,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * @param resumeThread
 	 *            thread to resume
 	 * @return thread in which the first suspend event occurs
-	 * @throws CoreException
 	 */
 	protected AntThread resumeToLineBreakpoint(AntThread resumeThread, ILineBreakpoint bp) throws CoreException {
 		DebugEventWaiter waiter = new DebugElementKindEventDetailWaiter(DebugEvent.SUSPEND, AntThread.class, DebugEvent.BREAKPOINT);
@@ -490,7 +501,7 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	}
 
 	protected IResource getBreakpointResource(String typeName) throws Exception {
-		IJavaElement element = getJavaProject().findElement(new Path(typeName + ".java")); //$NON-NLS-1$
+		IJavaElement element = getJavaProject().findElement(IPath.fromOSString(typeName + ".java")); //$NON-NLS-1$
 		IResource resource = element.getCorrespondingResource();
 		if (resource == null) {
 			resource = getJavaProject().getProject();
@@ -505,7 +516,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 *            line number
 	 * @param file
 	 *            the build file
-	 * @throws CoreException
 	 */
 	protected AntLineBreakpoint createLineBreakpoint(int lineNumber, IFile file) throws CoreException {
 		return new AntLineBreakpoint(file, lineNumber);
@@ -594,7 +604,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * 
 	 * @param frame
 	 *            stack frame to step in
-	 * @throws DebugException
 	 */
 	protected AntThread stepOver(AntStackFrame frame) throws DebugException {
 		org.eclipse.ant.tests.ui.testplugin.DebugEventWaiter waiter = new DebugElementKindEventDetailWaiter(DebugEvent.SUSPEND, AntThread.class, DebugEvent.STEP_END);
@@ -615,7 +624,6 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 	 * 
 	 * @param frame
 	 *            stack frame to step in
-	 * @throws DebugException
 	 */
 	protected AntThread stepOverToHitBreakpoint(AntStackFrame frame) throws DebugException {
 		org.eclipse.ant.tests.ui.testplugin.DebugEventWaiter waiter = new DebugElementKindEventDetailWaiter(DebugEvent.SUSPEND, AntThread.class, DebugEvent.BREAKPOINT);
@@ -789,8 +797,8 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 		debugUIPreferences.setValue(IDebugUIConstants.PREF_ACTIVATE_WORKBENCH, activate);
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@After
+	public void tearDown() throws Exception {
 		if (fEventSet != null) {
 			fEventSet = null;
 		}
@@ -800,11 +808,11 @@ public abstract class AbstractAntDebugTest extends AbstractAntUIBuildTest {
 		debugUIPreferences.setToDefault(IDebugPreferenceConstants.CONSOLE_OPEN_ON_OUT);
 		debugUIPreferences.setToDefault(IInternalDebugUIConstants.PREF_ACTIVATE_DEBUG_VIEW);
 		debugUIPreferences.setToDefault(IDebugUIConstants.PREF_ACTIVATE_WORKBENCH);
-		super.tearDown();
 	}
 
+	@Before
 	@Override
-	protected void setUp() throws Exception {
+	public void setUp() throws Exception {
 		super.setUp();
 		setPreferences();
 		DebugUIPlugin.getStandardDisplay().syncExec(() -> {

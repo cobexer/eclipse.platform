@@ -48,8 +48,8 @@ public abstract class AbstractAntEditorPreferencePage extends PreferencePage imp
 	protected List<IStatus> fStatusList;
 	private boolean fInitialized = false;
 
-	private Map<Button, String> fCheckBoxes = new HashMap<>();
-	private SelectionListener fCheckBoxListener = new SelectionListener() {
+	private final Map<Button, String> fCheckBoxes = new HashMap<>();
+	private final SelectionListener fCheckBoxListener = new SelectionListener() {
 		@Override
 		public void widgetDefaultSelected(SelectionEvent e) {
 			// do nothing
@@ -62,16 +62,16 @@ public abstract class AbstractAntEditorPreferencePage extends PreferencePage imp
 		}
 	};
 
-	private Map<Text, String> fTextFields = new HashMap<>();
-	private ModifyListener fTextFieldListener = e -> {
+	private final Map<Text, String> fTextFields = new HashMap<>();
+	private final ModifyListener fTextFieldListener = e -> {
 		if (fInitialized) {
 			Text text = (Text) e.widget;
 			fOverlayStore.setValue(fTextFields.get(text), text.getText());
 		}
 	};
 
-	private Map<Text, String[]> fNumberFields = new HashMap<>();
-	private ModifyListener fNumberFieldListener = e -> {
+	private final Map<Text, String[]> fNumberFields = new HashMap<>();
+	private final ModifyListener fNumberFieldListener = e -> {
 		if (fInitialized) {
 			numberFieldChanged((Text) e.widget);
 		}
@@ -332,9 +332,7 @@ public abstract class AbstractAntEditorPreferencePage extends PreferencePage imp
 		String line;
 		String separator = System.getProperty("line.separator"); //$NON-NLS-1$
 		StringBuilder buffer = new StringBuilder(512);
-		BufferedReader reader = null;
-		try {
-			reader = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream(filename)));
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream(filename)))) {
 			while ((line = reader.readLine()) != null) {
 				buffer.append(line);
 				buffer.append(separator);
@@ -342,16 +340,6 @@ public abstract class AbstractAntEditorPreferencePage extends PreferencePage imp
 		}
 		catch (IOException io) {
 			AntUIPlugin.log(io);
-		}
-		finally {
-			if (reader != null) {
-				try {
-					reader.close();
-				}
-				catch (IOException e) {
-					// do nothing
-				}
-			}
 		}
 		return buffer.toString();
 	}

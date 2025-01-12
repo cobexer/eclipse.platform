@@ -13,26 +13,19 @@
  *******************************************************************************/
 package org.eclipse.team.tests.core;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import junit.framework.Test;
-import junit.framework.TestCase;
-import junit.framework.TestSuite;
 import org.eclipse.team.internal.core.streams.CRLFtoLFInputStream;
 import org.eclipse.team.internal.core.streams.LFtoCRLFInputStream;
+import org.junit.jupiter.api.Test;
 
-public class StreamTests extends TestCase {
+public class StreamTests {
 
-	public StreamTests(String name) {
-		super(name);
-	}
-
-	public static Test suite() {
-		return new TestSuite(StreamTests.class);
-	}
-
+	@Test
 	public void testCRLFtoLFInputStream() throws IOException {
 		testCRLFtoLFTranslation("", "");
 		testCRLFtoLFTranslation("a", "a");
@@ -52,6 +45,7 @@ public class StreamTests extends TestCase {
 		assertStreamEquals(inExpected, in);
 	}
 
+	@Test
 	public void testLFtoCRLFInputStream() throws IOException {
 		testLFtoCRLFTranslation("", "");
 		testLFtoCRLFTranslation("a", "a");
@@ -76,7 +70,7 @@ public class StreamTests extends TestCase {
 			for (;;) {
 				int byte1 = in1.read();
 				int byte2 = in2.read();
-				assertEquals("Streams not equal", byte1, byte2);
+				assertEquals(byte1, byte2, "Streams not equal");
 				if (byte1 == -1) break;
 			}
 		} finally {

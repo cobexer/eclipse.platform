@@ -25,6 +25,7 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IConfigurationElement;
 import org.eclipse.core.runtime.IExtensionDelta;
 import org.eclipse.core.runtime.IExtensionRegistry;
+import org.eclipse.core.runtime.ILog;
 import org.eclipse.core.runtime.IRegistryChangeEvent;
 import org.eclipse.core.runtime.IRegistryChangeListener;
 import org.eclipse.core.runtime.Platform;
@@ -32,7 +33,7 @@ import org.eclipse.core.runtime.Platform;
 public class TypeExtensionManager implements IRegistryChangeListener {
 
 	private static final String EXTENSION_NAMESPACE = "org.eclipse.core.expressions"; //$NON-NLS-1$
-	private String fExtensionPoint;
+	private final String fExtensionPoint;
 
 	/**
 	 * Tells whether this class is in debug mode.
@@ -190,7 +191,7 @@ public class TypeExtensionManager implements IRegistryChangeListener {
 				try {
 					result[i]= new PropertyTesterDescriptor(config);
 				} catch (CoreException e) {
-					Platform.getLog(TypeExtensionManager.class).log(e.getStatus());
+					ILog.of(TypeExtensionManager.class).log(e.getStatus());
 					result[i]= NULL_PROPERTY_TESTER;
 				}
 			}

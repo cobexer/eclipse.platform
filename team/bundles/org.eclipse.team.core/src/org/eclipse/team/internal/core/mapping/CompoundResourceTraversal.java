@@ -30,10 +30,10 @@ import org.eclipse.core.runtime.IPath;
  */
 public class CompoundResourceTraversal {
 
-	private Set<IResource> deepFolders = new HashSet<>();
-	private Set<IResource> shallowFolders = new HashSet<>();
-	private Set<IResource> zeroFolders = new HashSet<>();
-	private Set<IResource> files = new HashSet<>();
+	private final Set<IResource> deepFolders = new HashSet<>();
+	private final Set<IResource> shallowFolders = new HashSet<>();
+	private final Set<IResource> zeroFolders = new HashSet<>();
+	private final Set<IResource> files = new HashSet<>();
 
 	public synchronized void addTraversals(ResourceTraversal[] traversals) {
 		for (ResourceTraversal traversal : traversals) {
@@ -63,6 +63,8 @@ public class CompoundResourceTraversal {
 		case IResource.DEPTH_ZERO:
 			addZeroFolder(resource);
 			break;
+		default:
+			throw new IllegalArgumentException(Integer.toString(depth));
 		}
 	}
 
@@ -91,6 +93,9 @@ public class CompoundResourceTraversal {
 			return (shallowFolders.contains(resource));
 		case IResource.DEPTH_ZERO:
 			return (shallowFolders.contains(resource.getParent()) || zeroFolders.contains(resource));
+		default:
+			// INFINITE
+			break;
 		}
 		return false;
 	}
@@ -123,6 +128,8 @@ public class CompoundResourceTraversal {
 					iter.remove();
 				}
 				break;
+			default: // DEPTH_ZERO
+				break;
 			}
 		}
 		// Now, remove any shallow folders
@@ -148,6 +155,8 @@ public class CompoundResourceTraversal {
 				if (fullPath.equals(child.getFullPath().removeLastSegments(1))) {
 					iter.remove();
 				}
+				break;
+			default: // DEPTH_ZERO
 				break;
 			}
 		}

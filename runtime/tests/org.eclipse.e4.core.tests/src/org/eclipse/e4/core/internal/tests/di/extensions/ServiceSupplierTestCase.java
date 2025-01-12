@@ -9,8 +9,7 @@ import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.function.BooleanSupplier;
-
-import javax.inject.Inject;
+import java.util.function.Supplier;
 
 import org.eclipse.e4.core.contexts.ContextInjectionFactory;
 import org.eclipse.e4.core.contexts.EclipseContextFactory;
@@ -24,6 +23,8 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
+
+import jakarta.inject.Inject;
 
 public class ServiceSupplierTestCase {
 	public static class TestBean {
@@ -72,14 +73,14 @@ public class ServiceSupplierTestCase {
 		@Inject
 		@Optional
 		@Service(filterExpression = "(component=disabled)")
-		TestService disabledService;
+		volatile TestService disabledService;
 
 		@Inject
 		@Service(filterExpression = "(component=disabled)")
-		List<TestService> services;
+		volatile List<TestService> services;
 	}
 
-	private List<ServiceRegistration<?>> registrations = new ArrayList<>();
+	private final List<ServiceRegistration<?>> registrations = new ArrayList<>();
 
 	@After
 	public void cleanup() {
@@ -235,7 +236,7 @@ public class ServiceSupplierTestCase {
 	}
 
 	@Test
-	public void testOptionalReferences() throws InterruptedException {
+	public void testOptionalReferences() throws Exception {
 		BundleContext context = FrameworkUtil.getBundle(getClass()).getBundleContext();
 		IEclipseContext serviceContext = EclipseContextFactory.getServiceContext(context);
 		TestDisabledBean bean = ContextInjectionFactory.make(TestDisabledBean.class, serviceContext);
@@ -245,39 +246,49 @@ public class ServiceSupplierTestCase {
 
 		ServiceReference<ComponentEnabler> ref = context.getServiceReference(ComponentEnabler.class);
 		ComponentEnabler enabler = context.getService(ref);
+		final int timeoutInMillis = 1000;
 		try {
 			enabler.enableDisabledServiceA();
-			// give the service registry and the injection some time
-			Thread.sleep(100);
+			// wait for asynchronous service registry and injection to finish
+			waitForCondition(() -> bean.services.size() == 1 && bean.disabledService != null, timeoutInMillis);
 			assertNotNull(bean.disabledService);
 			assertEquals(1, bean.services.size());
 			assertSame(DisabledServiceA.class, bean.disabledService.getClass());
 
 			enabler.enableDisabledServiceB();
-			// give the service registry and the injection some time
-			Thread.sleep(100);
+			// wait for asynchronous service registry and injection to finish
+			waitForCondition(() -> bean.services.size() == 2 && bean.disabledService instanceof DisabledServiceB,
+					timeoutInMillis);
 			assertNotNull(bean.disabledService);
 			assertEquals(2, bean.services.size());
 			assertSame(DisabledServiceB.class, bean.disabledService.getClass());
 
 			enabler.disableDisabledServiceB();
-			// give the service registry and the injection some time
-			Thread.sleep(100);
+			// wait for asynchronous service registry and injection to finish
+			waitForCondition(() -> bean.services.size() == 1 && bean.disabledService instanceof DisabledServiceA,
+					timeoutInMillis);
 			assertNotNull(bean.disabledService);
 			assertEquals(1, bean.services.size());
 			assertSame(DisabledServiceA.class, bean.disabledService.getClass());
 
 			enabler.disableDisabledServiceA();
-			// give the service registry and the injection some time
-			Thread.sleep(100);
+			// wait for asynchronous service registry and injection to finish
+			waitForCondition(() -> bean.services.size() == 0 && bean.disabledService == null, timeoutInMillis);
 			assertNull(bean.disabledService);
 			assertEquals(0, bean.services.size());
 		} finally {
 			enabler.disableDisabledServiceA();
 			enabler.disableDisabledServiceB();
-			// give the service registry and the injection some time to ensure
+			// wait for asynchronous service registry and injection to ensure
 			// clear state after this test
-			Thread.sleep(100);
+			waitForCondition(() -> bean.services.size() == 0 && bean.disabledService == null, timeoutInMillis);
+		}
+	}
+
+	private void waitForCondition(Supplier<Boolean> condition, int timeoutInMillis) throws Exception {
+		long startTimeInMillis = System.currentTimeMillis();
+		while (!condition.get() && System.currentTimeMillis() - startTimeInMillis < timeoutInMillis) {
+			Thread.sleep(20);
 		}
 	}
 

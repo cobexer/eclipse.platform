@@ -13,11 +13,28 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import java.io.ByteArrayInputStream;
+import static java.util.function.Predicate.not;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomString;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.isReadOnlySupported;
+import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.io.IOException;
 import java.io.InputStream;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.runtime.Platform.OS;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests regression of bug 25457.  In this case, attempting to move a project
@@ -27,134 +44,88 @@ import org.eclipse.core.tests.resources.ResourceTest;
  * Note: this is similar to Bug_32076, which deals with failure to move in
  * the non case-change scenario.
  */
-public class Bug_025457 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_025457 {
 
-	public void testFile() {
-		//this test only works on windows
-		if (!isWindows()) {
-			return;
-		}
+	@Test
+	public void testFile() throws Exception {
+		assumeTrue("only relevant on Windows", OS.isWindows());
+
 		IProject source = getWorkspace().getRoot().getProject("project");
 		IFile sourceFile = source.getFile("file.txt");
 		IFile destFile = source.getFile("File.txt");
-		ensureExistsInWorkspace(source, true);
-		final String content = getRandomString();
-		ensureExistsInWorkspace(sourceFile, content);
+		createInWorkspace(source);
+		final String content = createRandomString();
+		createInWorkspace(sourceFile, content);
 
 		//open a stream in the source to cause the rename to fail
-		InputStream stream = null;
-		try {
-			try {
-				stream = sourceFile.getContents();
-			} catch (CoreException e) {
-				fail("0.99", e);
-			}
+		try (InputStream stream = sourceFile.getContents()) {
 			//try to rename the file (should fail)
-			try {
-				sourceFile.move(destFile.getFullPath(), IResource.NONE, getMonitor());
-				fail("1.99");
-			} catch (CoreException e1) {
-				//should fail
-			}
-		} finally {
-			assertClose(stream);
+			assertThrows(CoreException.class,
+					() -> sourceFile.move(destFile.getFullPath(), IResource.NONE, createTestMonitor()));
 		}
 		//ensure source still exists and has same content
-		assertTrue("2.0", source.exists());
-		assertTrue("2.1", sourceFile.exists());
-		try {
-			stream = sourceFile.getContents();
-			assertTrue("2.2", compareContent(stream, new ByteArrayInputStream(content.getBytes())));
-		} catch (CoreException e) {
-			fail("3.99", e);
-		} finally {
-			assertClose(stream);
-		}
+		assertThat(source).matches(IResource::exists, "exists");
+		assertThat(sourceFile).matches(IResource::exists, "exists");
+		assertEquals(content, sourceFile.readString());
 		//ensure destination file does not exist
-		assertTrue("2.3", !destFile.exists());
+		assertThat(destFile).matches(not(IResource::exists), "not exists");
 	}
 
-	public void testFolder() {
-		//this test only works on windows
+	@Test
+	public void testFolder() throws IOException, CoreException {
 		//native code must also be present so move can detect the case change
-		if (!isWindows() || !isReadOnlySupported()) {
-			return;
-		}
+		assumeTrue("only relevant on Windows", OS.isWindows() && isReadOnlySupported());
+
 		IProject source = getWorkspace().getRoot().getProject("SourceProject");
 		IFolder sourceFolder = source.getFolder("folder");
 		IFile sourceFile = sourceFolder.getFile("Important.txt");
 		IFolder destFolder = source.getFolder("Folder");
 		IFile destFile = destFolder.getFile("Important.txt");
-		ensureExistsInWorkspace(source, true);
-		ensureExistsInWorkspace(sourceFolder, true);
-		ensureExistsInWorkspace(sourceFile, true);
+		createInWorkspace(source);
+		createInWorkspace(sourceFolder);
+		createInWorkspace(sourceFile);
 
 		//open a stream in the source to cause the rename to fail
-		InputStream stream = null;
-		try {
-			try {
-				stream = sourceFile.getContents();
-			} catch (CoreException e) {
-				fail("0.99", e);
-			}
+		try (InputStream stream = sourceFile.getContents()) {
 			//try to rename the project (should fail)
-			try {
-				sourceFolder.move(destFolder.getFullPath(), IResource.NONE, getMonitor());
-				fail("1.99");
-			} catch (CoreException e1) {
-				//should fail
-			}
+			assertThrows(CoreException.class,
+					() -> sourceFolder.move(destFolder.getFullPath(), IResource.NONE, createTestMonitor()));
 			//ensure source still exists
-			assertTrue("2.0", source.exists());
-			assertTrue("2.1", sourceFolder.exists());
-			assertTrue("2.2", sourceFile.exists());
+			assertThat(source).matches(IResource::exists, "exists");
+			assertThat(sourceFolder).matches(IResource::exists, "exists");
+			assertThat(sourceFile).matches(IResource::exists, "exists");
 
 			//ensure destination does not exist
-			assertTrue("2.3", !destFolder.exists());
-			assertTrue("2.4", !destFile.exists());
-
-		} finally {
-			assertClose(stream);
+			assertThat(destFolder).matches(not(IResource::exists), "not exists");
+			assertThat(destFile).matches(not(IResource::exists), "not exists");
 		}
 	}
 
-	public void testProject() {
-		//this test only works on windows
-		if (!isWindows()) {
-			return;
-		}
+	@Test
+	public void testProject() throws IOException, CoreException {
+		assumeTrue("only relevant on Windows", OS.isWindows());
+
 		IProject source = getWorkspace().getRoot().getProject("project");
 		IProject destination = getWorkspace().getRoot().getProject("Project");
 		IFile sourceFile = source.getFile("Important.txt");
 		IFile destFile = destination.getFile("Important.txt");
-		ensureExistsInWorkspace(source, true);
-		ensureExistsInWorkspace(sourceFile, true);
+		createInWorkspace(source);
+		createInWorkspace(sourceFile);
 
 		//open a stream in the source to cause the rename to fail
-		InputStream stream = null;
-		try {
-			try {
-				stream = sourceFile.getContents();
-			} catch (CoreException e) {
-				fail("1.99", e);
-			}
+		try (InputStream stream = sourceFile.getContents()) {
 			//try to rename the project (should fail)
-			try {
-				source.move(destination.getFullPath(), IResource.NONE, getMonitor());
-				fail("1.99");
-			} catch (CoreException e1) {
-				//should fail
-			}
+			assertThrows(CoreException.class,
+					() -> source.move(destination.getFullPath(), IResource.NONE, createTestMonitor()));
+
 			//ensure source does not exist
-			assertTrue("2.0", !source.exists());
-			assertTrue("2.1", !sourceFile.exists());
+			assertThat(source).matches(not(IResource::exists), "not exists");
+			assertThat(sourceFile).matches(not(IResource::exists), "not exists");
 
 			//ensure destination does not exist
-			assertTrue("2.2", destination.exists());
-			assertTrue("2.3", destFile.exists());
-
-		} finally {
-			assertClose(stream);
+			assertThat(destination).matches(IResource::exists, "exists");
+			assertThat(destFile).matches(IResource::exists, "exists");
 		}
 	}
 }

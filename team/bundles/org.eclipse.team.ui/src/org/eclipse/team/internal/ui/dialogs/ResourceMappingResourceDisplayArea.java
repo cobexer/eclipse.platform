@@ -50,11 +50,11 @@ import org.eclipse.ui.views.navigator.ResourceComparator;
  */
 public class ResourceMappingResourceDisplayArea extends DialogArea {
 	private ResourceMapping mapping;
-	private ResourceMappingContext context = ResourceMappingContext.LOCAL_CONTEXT;
+	private final ResourceMappingContext context = ResourceMappingContext.LOCAL_CONTEXT;
 	private TreeViewer viewer;
 	private Label label;
-	private IResourceMappingResourceFilter filter;
-	private Map<ResourceMapping, Map<IResource, List<IResource>>> cachedFiltering = new HashMap<>();
+	private final IResourceMappingResourceFilter filter;
+	private final Map<ResourceMapping, Map<IResource, List<IResource>>> cachedFiltering = new HashMap<>();
 	private String message;
 
 	private static IWorkbenchAdapter getWorkbenchAdapter(IAdaptable o) {
@@ -85,8 +85,8 @@ public class ResourceMappingResourceDisplayArea extends DialogArea {
 	}
 
 	public class ResourceMappingElement implements IWorkbenchAdapter, IAdaptable {
-		private ResourceMapping mapping;
-		private ResourceMappingContext context;
+		private final ResourceMapping mapping;
+		private final ResourceMappingContext context;
 
 		public ResourceMappingElement(ResourceMapping mapping, ResourceMappingContext context) {
 			this.mapping = mapping;
@@ -139,7 +139,6 @@ public class ResourceMappingResourceDisplayArea extends DialogArea {
 		}
 
 		@Override
-		@SuppressWarnings("unchecked")
 		public <T> T getAdapter(Class<T> adapter) {
 			if (adapter == IWorkbenchAdapter.class)
 				return (T) this;
@@ -151,10 +150,10 @@ public class ResourceMappingResourceDisplayArea extends DialogArea {
 	 * The model element for resources that are obtained from a traversal.
 	 */
 	public class ResourceTraversalElement implements IWorkbenchAdapter, IAdaptable {
-		private ResourceTraversal traversal;
-		private ResourceMappingContext context;
-		private IResource resource;
-		private Object parent;
+		private final ResourceTraversal traversal;
+		private final ResourceMappingContext context;
+		private final IResource resource;
+		private final Object parent;
 
 		public ResourceTraversalElement(Object parent, ResourceTraversal traversal, IResource resource, ResourceMappingContext context) {
 			this.parent = parent;
@@ -227,7 +226,6 @@ public class ResourceMappingResourceDisplayArea extends DialogArea {
 		}
 
 		@Override
-		@SuppressWarnings("unchecked")
 		public <T> T getAdapter(Class<T> adapter) {
 			if (adapter == IWorkbenchAdapter.class)
 				return (T) this;

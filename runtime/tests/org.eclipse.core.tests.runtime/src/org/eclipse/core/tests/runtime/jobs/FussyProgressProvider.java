@@ -24,10 +24,10 @@ import org.eclipse.core.tests.harness.FussyProgressMonitor;
  * Dispatches fussy progress monitors, and sanity checks them when finished.
  */
 public class FussyProgressProvider extends ProgressProvider {
-	private ArrayList<FussyProgressMonitor> monitors = new ArrayList<>();
+	private final ArrayList<FussyProgressMonitor> monitors = new ArrayList<>();
 
 	@Override
-	public IProgressMonitor createMonitor(Job job) {
+	public synchronized IProgressMonitor createMonitor(Job job) {
 		//only give a fussy monitor to jobs from runtime tests
 		String name = job == null ? "" : job.getClass().getName();
 		if (!name.contains("core.tests.runtime") && !name.contains("core.tests.internal.runtime") && !name.contains("core.tests.harness"))
@@ -37,7 +37,7 @@ public class FussyProgressProvider extends ProgressProvider {
 		return result;
 	}
 
-	public void sanityCheck() {
+	public synchronized void sanityCheck() {
 		for (FussyProgressMonitor monitor : monitors)
 			monitor.sanityCheck();
 	}

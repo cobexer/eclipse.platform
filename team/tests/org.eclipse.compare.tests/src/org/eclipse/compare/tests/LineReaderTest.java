@@ -13,35 +13,40 @@
  *******************************************************************************/
 package org.eclipse.compare.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.List;
 
 import org.eclipse.compare.internal.core.patch.LineReader;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class LineReaderTest  {
 
 	@Test
-	public void testReadEmpty() {
-		LineReader lr= new LineReader(getReader("empty.txt")); //$NON-NLS-1$
-		List<String> inLines= lr.readLines();
-		assertEquals(0, inLines.size());
+	public void testReadEmpty() throws IOException {
+		try (BufferedReader reader = getReader("empty.txt")) {
+			LineReader lr = new LineReader(reader);
+			List<String> inLines = lr.readLines();
+			assertThat(inLines).isEmpty();
+		}
 	}
 
 	@Test
-	public void testReadNormal() {
-		LineReader lr= new LineReader(getReader("normal.txt")); //$NON-NLS-1$
+	public void testReadNormal() throws IOException {
+		try (BufferedReader reader = getReader("normal.txt")) {
+			LineReader lr = new LineReader(reader);
 		List<String> inLines= lr.readLines();
-		assertEquals(3, inLines.size());
-		assertEquals("[1]\n", convertLineDelimeters(inLines.get(0))); //$NON-NLS-1$
-		assertEquals("[2]\n", convertLineDelimeters(inLines.get(1))); //$NON-NLS-1$
-		assertEquals("[3]\n", convertLineDelimeters(inLines.get(2))); //$NON-NLS-1$
+		assertThat(inLines).hasSize(3).satisfiesExactlyInAnyOrder(
+				first -> assertThat(convertLineDelimeters(first)).isEqualTo("[1]\n"),
+				second -> assertThat(convertLineDelimeters(second)).isEqualTo("[2]\n"),
+				third -> assertThat(convertLineDelimeters(third)).isEqualTo("[3]\n"));
+		}
 	}
 
 	private String convertLineDelimeters(Object object) {
@@ -52,26 +57,22 @@ public class LineReaderTest  {
 	}
 
 	@Test
-	public void testReadUnterminatedLastLine() {
-		LineReader lr= new LineReader(getReader("unterminated.txt")); //$NON-NLS-1$
+	public void testReadUnterminatedLastLine() throws IOException {
+		try (BufferedReader reader = getReader("unterminated.txt")) {
+			LineReader lr = new LineReader(reader);
 		List<String> inLines= lr.readLines();
-		assertEquals(3, inLines.size());
-		assertEquals("[1]\n", convertLineDelimeters(inLines.get(0))); //$NON-NLS-1$
-		assertEquals("[2]\n", convertLineDelimeters(inLines.get(1))); //$NON-NLS-1$
-		assertEquals("[3]", inLines.get(2)); //$NON-NLS-1$
+		assertThat(inLines).hasSize(3).satisfiesExactlyInAnyOrder(
+				first -> assertThat(convertLineDelimeters(first)).isEqualTo("[1]\n"),
+				second -> assertThat(convertLineDelimeters(second)).isEqualTo("[2]\n"),
+				third -> assertThat(third).isEqualTo("[3]"));
+		}
 	}
 
-	private BufferedReader getReader(String name) {
-		IPath path = new Path("linereaderdata/" + name);
-		URL url;
-		try {
-			url = new URL(CompareTestPlugin.getDefault().getBundle().getEntry("/"), path.toString());
-			InputStream resourceAsStream = url.openStream();
-			InputStreamReader reader2 = new InputStreamReader(resourceAsStream);
-			return new BufferedReader(reader2);
-		} catch ( IOException e) {
-			fail(e.getMessage());
-		}
-		return null;
+	private BufferedReader getReader(String name) throws IOException {
+		IPath path = IPath.fromOSString("linereaderdata/" + name);
+		URL url = new URL(CompareTestPlugin.getDefault().getBundle().getEntry("/"), path.toString());
+		InputStream resourceAsStream = url.openStream();
+		InputStreamReader reader2 = new InputStreamReader(resourceAsStream);
+		return new BufferedReader(reader2);
 	}
 }

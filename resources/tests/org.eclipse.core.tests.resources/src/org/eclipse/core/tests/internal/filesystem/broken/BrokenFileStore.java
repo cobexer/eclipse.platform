@@ -19,12 +19,13 @@ import java.net.URISyntaxException;
 import org.eclipse.core.filesystem.IFileInfo;
 import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.provider.FileStore;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.junit.Assert;
 
-/**
- *
- */
 public class BrokenFileStore extends FileStore {
 
 	private URI uri;
@@ -58,7 +59,7 @@ public class BrokenFileStore extends FileStore {
 	}
 
 	private IPath getPath() {
-		return new Path(uri.getSchemeSpecificPart());
+		return IPath.fromOSString(uri.getSchemeSpecificPart());
 	}
 
 	@Override

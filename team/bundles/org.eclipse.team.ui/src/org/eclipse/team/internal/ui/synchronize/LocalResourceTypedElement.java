@@ -13,8 +13,6 @@
  *******************************************************************************/
 package org.eclipse.team.internal.ui.synchronize;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.eclipse.compare.ISharedDocumentAdapter;
@@ -86,7 +84,6 @@ public class LocalResourceTypedElement extends ResourceNode implements IAdaptabl
 	 * {@link #saveDocument(boolean, IProgressMonitor)} to save the buffered contents to
 	 * the underlying resource.
 	 * @param monitor a progress monitor
-	 * @throws CoreException
 	 */
 	public void commit(IProgressMonitor monitor) throws CoreException {
 		if (isDirty()) {
@@ -94,22 +91,13 @@ public class LocalResourceTypedElement extends ResourceNode implements IAdaptabl
 				saveDocument(true, monitor);
 			} else {
 				IResource resource = getResource();
-				if (resource instanceof IFile) {
-					ByteArrayInputStream is = new ByteArrayInputStream(getContent());
+				if (resource instanceof IFile file) {
+					byte[] content = getContent();
 					try {
-						IFile file = (IFile) resource;
-						if (file.exists())
-							file.setContents(is, false, true, monitor);
-						else
-							file.create(is, false, monitor);
+						file.write(content, false, false, true, monitor);
 						fDirty = false;
 					} finally {
 						fireContentChanged();
-						if (is != null)
-							try {
-								is.close();
-							} catch (IOException ex) {
-							}
 					}
 				}
 				updateTimestamp();
@@ -124,7 +112,6 @@ public class LocalResourceTypedElement extends ResourceNode implements IAdaptabl
 		return null;
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T getAdapter(Class<T> adapter) {
 		if (adapter == ISharedDocumentAdapter.class) {
@@ -202,7 +189,6 @@ public class LocalResourceTypedElement extends ResourceNode implements IAdaptabl
 	 * 			while saving the given element if necessary
 	 * @param monitor a progress monitor
 	 * @return whether the save succeeded or not
-	 * @throws CoreException
 	 */
 	public boolean saveDocument(boolean overwrite, IProgressMonitor monitor) throws CoreException {
 		if (isConnected()) {

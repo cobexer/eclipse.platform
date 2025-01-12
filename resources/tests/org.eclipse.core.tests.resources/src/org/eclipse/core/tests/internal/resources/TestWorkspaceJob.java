@@ -21,12 +21,11 @@ import org.eclipse.core.runtime.*;
  */
 public class TestWorkspaceJob extends WorkspaceJob {
 	private static final int tickLength = 10;
-	private long duration;
+	private final long duration;
 	private boolean touch = false;
 
 	/**
 	 * Creates a workspace job that will run for the specified duration in milliseconds.
-	 * @param duration
 	 */
 	public TestWorkspaceJob(long duration) {
 		super("TestWorkspaceJob");

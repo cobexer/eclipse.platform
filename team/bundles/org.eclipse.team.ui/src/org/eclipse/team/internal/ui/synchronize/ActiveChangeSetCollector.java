@@ -59,14 +59,14 @@ public class ActiveChangeSetCollector implements IDiffChangeListener {
 	/*
 	 * Set which contains those changes that are not part of an active set
 	 */
-	private SyncInfoTree rootSet = new SyncInfoTree();
+	private final SyncInfoTree rootSet = new SyncInfoTree();
 
 	private final ChangeSetModelProvider provider;
 
 	/*
 	 * Listener registered with active change set manager
 	 */
-	private IChangeSetChangeListener activeChangeSetListener = new IChangeSetChangeListener() {
+	private final IChangeSetChangeListener activeChangeSetListener = new IChangeSetChangeListener() {
 
 		@Override
 		public void setAdded(final ChangeSet set) {
@@ -160,7 +160,6 @@ public class ActiveChangeSetCollector implements IDiffChangeListener {
 	 * properly. Updates done from other threads should use the
 	 * <code>performUpdate</code> method to ensure the view is
 	 * updated properly.
-	 * @param seedSet
 	 */
 	public void reset(SyncInfoSet seedSet) {
 		// First, clean up
@@ -233,8 +232,7 @@ public class ActiveChangeSetCollector implements IDiffChangeListener {
 	 * @param resources the resources to be removed
 	 */
 	protected void remove(IResource[] resources) {
-		for (Object element : activeSets.values()) {
-			SyncInfoSet set = (SyncInfoSet) element;
+		for (SyncInfoSet set : activeSets.values()) {
 			set.removeAll(resources);
 		}
 		rootSet.removeAll(resources);
@@ -411,8 +409,7 @@ public class ActiveChangeSetCollector implements IDiffChangeListener {
 	}
 
 	private ChangeSet getChangeSet(IDiffTree tree) {
-		for (Object element : activeSets.keySet()) {
-			ChangeSet changeSet = (ChangeSet) element;
+		for (ChangeSet changeSet : activeSets.keySet()) {
 			if (((DiffChangeSet)changeSet).getDiffTree() == tree) {
 				return changeSet;
 			}

@@ -90,7 +90,7 @@ public final class XMLRootElementContentDescriber2 extends XMLContentDescriber i
 	 */
 	private static class QualifiedElement {
 		private String namespace;
-		private String element;
+		private final String element;
 		private String dtd;
 
 		public QualifiedElement(String qualifiedElement) {
@@ -128,7 +128,6 @@ public final class XMLRootElementContentDescriber2 extends XMLContentDescriber i
 	 * <li><code>INVALID</code></li>,
 	 * <li><code>INDETERMINATE</code></li>
 	 * </ul>
-	 * @throws IOException
 	 */
 	private int checkCriteria(InputSource contents, Map<String, Object> properties) throws IOException {
 		if (!isProcessed(properties))

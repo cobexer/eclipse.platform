@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2005, 2016 IBM Corporation and others.
+ * Copyright (c) 2005, 2024 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -18,16 +18,51 @@
  *******************************************************************************/
 package org.eclipse.core.internal.filesystem.local;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
-import java.nio.file.*;
-import org.eclipse.core.filesystem.*;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.CopyOption;
+import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinWorkerThread;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileInfo;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.IFileSystem;
 import org.eclipse.core.filesystem.URIUtil;
 import org.eclipse.core.filesystem.provider.FileInfo;
 import org.eclipse.core.filesystem.provider.FileStore;
-import org.eclipse.core.internal.filesystem.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.internal.filesystem.FileStoreUtil;
+import org.eclipse.core.internal.filesystem.Messages;
+import org.eclipse.core.internal.filesystem.Policy;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -106,19 +141,17 @@ public class LocalFile extends FileStore {
 
 	@Override
 	public void copy(IFileStore destFile, int options, IProgressMonitor monitor) throws CoreException {
-		if (destFile instanceof LocalFile) {
-			File source = file;
-			File destination = ((LocalFile) destFile).file;
+		if (destFile instanceof LocalFile destination) {
 			//handle case variants on a case-insensitive OS, or copying between
 			//two equivalent files in an environment that supports symbolic links.
 			//in these nothing needs to be copied (and doing so would likely lose data)
 			try {
-				if (isSameFile(source, destination)) {
+				if (isSameFile(this.file, destination.file)) {
 					//nothing to do
 					return;
 				}
 			} catch (IOException e) {
-				String message = NLS.bind(Messages.couldNotRead, source.getAbsolutePath());
+				String message = NLS.bind(Messages.couldNotRead, this.file.getAbsolutePath());
 				Policy.error(EFS.ERROR_READ, message, e);
 			}
 		}
@@ -126,19 +159,49 @@ public class LocalFile extends FileStore {
 		super.copy(destFile, options, monitor);
 	}
 
+	private static final CopyOption[] NO_OVERWRITE = {};
+	private static final CopyOption[] OVERWRITE_EXISTING = {StandardCopyOption.REPLACE_EXISTING};
+	public static final int LARGE_FILE_SIZE_THRESHOLD = 1024 * 1024; // 1 MiB experimentally determined
+
+	@Override
+	protected void copyFile(IFileInfo sourceInfo, IFileStore destination, int options, IProgressMonitor monitor) throws CoreException {
+		if (sourceInfo.getLength() > LARGE_FILE_SIZE_THRESHOLD && destination instanceof LocalFile target) {
+			SubMonitor subMonitor = SubMonitor.convert(monitor, NLS.bind(Messages.copying, this), 100);
+			try {
+				boolean overwrite = (options & EFS.OVERWRITE) != 0;
+				Files.copy(this.file.toPath(), target.file.toPath(), overwrite ? OVERWRITE_EXISTING : NO_OVERWRITE);
+				subMonitor.worked(93);
+				transferAttributes(sourceInfo, destination);
+				subMonitor.worked(5);
+			} catch (FileAlreadyExistsException e) {
+				Policy.error(EFS.ERROR_EXISTS, NLS.bind(Messages.fileExists, target.filePath), e);
+			} catch (IOException e) {
+				Policy.error(EFS.ERROR_WRITE, NLS.bind(Messages.failedCopy, this.filePath, target.filePath), e);
+			} finally {
+				subMonitor.done();
+			}
+		} else {
+			super.copyFile(sourceInfo, destination, options, monitor);
+		}
+	}
+
+	public static final void transferAttributes(IFileInfo sourceInfo, IFileStore destination) throws CoreException {
+		int options = EFS.SET_ATTRIBUTES | EFS.SET_LAST_MODIFIED;
+		destination.putInfo(sourceInfo, options, null);
+	}
+
 	@Override
 	public void delete(int options, IProgressMonitor monitor) throws CoreException {
-		if (monitor == null)
+		if (monitor == null) {
 			monitor = new NullProgressMonitor();
-		else
-			monitor = new InfiniteProgress(monitor);
+		}
 		try {
-			monitor.beginTask(NLS.bind(Messages.deleting, this), 200);
-			String message = Messages.deleteProblem;
-			MultiStatus result = new MultiStatus(Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, message, null);
-			internalDelete(file, filePath, result, monitor);
-			if (!result.isOK())
+			InfiniteProgress infMonitor = new InfiniteProgress(monitor);
+			infMonitor.beginTask(NLS.bind(Messages.deleting, file));
+			IStatus result = internalDelete(file, infMonitor, FILE_SERVICE);
+			if (!result.isOK()) {
 				throw new CoreException(result);
+			}
 		} finally {
 			monitor.done();
 		}
@@ -146,13 +209,17 @@ public class LocalFile extends FileStore {
 
 	@Override
 	public boolean equals(Object obj) {
-		if (!(obj instanceof LocalFile))
+		if (this == obj) {
+			return true;
+		}
+		if (!(obj instanceof LocalFile otherFile)) {
 			return false;
+		}
 		//Mac oddity: file.equals returns false when case is different even when
 		//file system is not case sensitive (Radar bug 3190672)
-		LocalFile otherFile = (LocalFile) obj;
-		if (LocalFileSystem.MACOSX)
+		if (LocalFileSystem.MACOSX) {
 			return filePath.equalsIgnoreCase(otherFile.filePath);
+		}
 		return file.equals(otherFile.file);
 	}
 
@@ -176,7 +243,7 @@ public class LocalFile extends FileStore {
 
 	@Override
 	public IFileStore getFileStore(IPath path) {
-		return new LocalFile(new Path(file.getPath()).append(path).toFile());
+		return new LocalFile(IPath.fromOSString(file.getPath()).append(path).toFile());
 	}
 
 	@Override
@@ -207,92 +274,127 @@ public class LocalFile extends FileStore {
 		return file.hashCode();
 	}
 
+	private static final ForkJoinPool FILE_SERVICE = createExecutor(Math.max(1, Runtime.getRuntime().availableProcessors()));
+
+	private static ForkJoinPool createExecutor(int threadCount) {
+		return new ForkJoinPool(threadCount, pool -> {
+			final ForkJoinWorkerThread worker = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
+			worker.setName("LocalFile Deleter"); //$NON-NLS-1$
+			worker.setDaemon(true);
+			return worker;
+		}, //
+				/* UncaughtExceptionHandler */ null, //
+				/* asyncMode */ false, // Last-In-First-Out is important to delete child before parent folders
+				/* corePoolSize */ 0, //
+				/* maximumPoolSize */ threadCount, //
+				/* minimumRunnable */ 0, //
+				pool -> true, // if maximumPoolSize would be exceeded, don't throw RejectedExecutionException
+				/* keepAliveTime */ 1, TimeUnit.MINUTES); // pool terminates 1 thread per
+	}
+
 	/**
-	 * Deletes the given file recursively, adding failure info to
-	 * the provided status object.  The filePath is passed as a parameter
-	 * to optimize java.io.File object creation.
-	 */
-	private boolean internalDelete(File target, String pathToDelete, MultiStatus status, IProgressMonitor monitor) {
-		if (monitor.isCanceled()) {
+	* Deletes the given file recursively, adding failure info to
+	* the provided status object.  The filePath is passed as a parameter
+	* to optimize java.io.File object creation.
+	*/
+	private IStatus internalDelete(File target, InfiniteProgress infMonitor, ExecutorService executorService) {
+		infMonitor.subTask(NLS.bind(Messages.deleting, target));
+		if (infMonitor.isCanceled()) {
 			throw new OperationCanceledException();
 		}
+		List<Future<IStatus>> futures = new ArrayList<>();
 		try {
 			try {
 				// First try to delete - this should succeed for files and symbolic links to directories.
 				Files.deleteIfExists(target.toPath());
-				return true;
+				infMonitor.worked();
+				return Status.OK_STATUS;
 			} catch (AccessDeniedException e) {
 				// If the file is read only, it can't be deleted via Files.deleteIfExists()
 				// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=500306
 				if (target.delete()) {
-					return true;
+					infMonitor.worked();
+					return Status.OK_STATUS;
 				}
 				throw e;
 			}
-		} catch (DirectoryNotEmptyException e) {
-			monitor.subTask(NLS.bind(Messages.deleting, target));
-			String[] list = target.list();
-			if (list == null)
-				list = EMPTY_STRING_ARRAY;
-			int parentLength = pathToDelete.length();
-			boolean failedRecursive = false;
-			for (String element : list) {
-				if (monitor.isCanceled()) {
-					throw new OperationCanceledException();
-				}
-				// Optimized creation of child path object
-				StringBuilder childBuffer = new StringBuilder(parentLength + element.length() + 1);
-				childBuffer.append(pathToDelete);
-				childBuffer.append(File.separatorChar);
-				childBuffer.append(element);
-				String childName = childBuffer.toString();
-				// Try best effort on all children so put logical OR at end.
-				failedRecursive = !internalDelete(new java.io.File(childName), childName, status, monitor) || failedRecursive;
-				monitor.worked(1);
+		} catch (DirectoryNotEmptyException dne) {
+			// The target is a directory and it's not empty
+			// Try to delete all children.
+			try (DirectoryStream<Path> ds = Files.newDirectoryStream(target.toPath())) {
+				ds.forEach(p -> {
+					Future<IStatus> future = executorService.submit(() -> internalDelete(p.toFile(), infMonitor, executorService));
+					futures.add(future);
+				});
+			} catch (IOException streamException) {
+				return createErrorStatus(target, Messages.deleteProblem, streamException);
 			}
+			MultiStatus deleteChildrenStatus = new MultiStatus(Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, Messages.deleteProblem, null);
+
+			for (Future<IStatus> f : futures) {
+				try {
+					deleteChildrenStatus.add(f.get());
+				} catch (InterruptedException | ExecutionException ee) {
+					deleteChildrenStatus.add(createErrorStatus(target, Messages.deleteProblem, ee));
+				}
+			}
+			// Abort if one of the children couldn't be deleted.
+			if (!deleteChildrenStatus.isOK()) {
+				return deleteChildrenStatus;
+			}
+
+			// Try to delete the root directory
 			try {
-				// Don't try to delete the root if one of the children failed.
-				if (!failedRecursive && Files.deleteIfExists(target.toPath()))
-					return true;
+				if (Files.deleteIfExists(target.toPath())) {
+					infMonitor.worked();
+					return Status.OK_STATUS;
+				}
 			} catch (Exception e1) {
 				// We caught a runtime exception so log it.
-				String message = NLS.bind(Messages.couldnotDelete, target.getAbsolutePath());
-				status.add(new Status(IStatus.ERROR, Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, message, e1));
-				return false;
+				return createErrorStatus(target, Messages.couldnotDelete, e1);
 			}
+
 			// If we got this far, we failed.
-			String message = null;
-			if (fetchInfo().getAttribute(EFS.ATTRIBUTE_READ_ONLY)) {
-				message = NLS.bind(Messages.couldnotDeleteReadOnly, target.getAbsolutePath());
-			} else {
-				message = NLS.bind(Messages.couldnotDelete, target.getAbsolutePath());
-			}
-			status.add(new Status(IStatus.ERROR, Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, message, null));
-			return false;
+			String message = fetchInfo().getAttribute(EFS.ATTRIBUTE_READ_ONLY) //
+					? Messages.couldnotDeleteReadOnly
+
+					// This is the worst-case scenario: something failed but we don't know what. The children were
+					// deleted successfully and the directory is NOT read-only... there's nothing else to report.
+					: Messages.couldnotDelete;
+
+			return createErrorStatus(target, message, null);
+
 		} catch (IOException e) {
-			String message = NLS.bind(Messages.couldnotDelete, target.getAbsolutePath());
-			status.add(new Status(IStatus.ERROR, Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, message, e));
-			return false;
+			return createErrorStatus(target, Messages.couldnotDelete, e);
 		}
+	}
+
+	private IStatus createErrorStatus(File target, String msg, Exception e) {
+		String message = NLS.bind(msg, target.getAbsolutePath());
+		return new Status(IStatus.ERROR, Policy.PI_FILE_SYSTEM, EFS.ERROR_DELETE, message, e);
 	}
 
 	@Override
 	public boolean isParentOf(IFileStore other) {
-		if (!(other instanceof LocalFile))
+		if (!(other instanceof LocalFile otherFile)) {
 			return false;
+		}
 		String thisPath = filePath;
-		String thatPath = ((LocalFile) other).filePath;
+		String thatPath = otherFile.filePath;
 		int thisLength = thisPath.length();
 		int thatLength = thatPath.length();
 		//if equal then not a parent
-		if (thisLength >= thatLength)
+		if (thisLength >= thatLength) {
 			return false;
+		}
 		if (getFileSystem().isCaseSensitive()) {
-			if (thatPath.indexOf(thisPath) != 0)
+			if (!thatPath.startsWith(thisPath)) {
 				return false;
+			}
 		} else {
-			if (thatPath.toLowerCase().indexOf(thisPath.toLowerCase()) != 0)
+			if (!thatPath.toLowerCase().startsWith(thisPath.toLowerCase())) {
 				return false;
+			}
 		}
 		//The common portion must end with a separator character for this to be a parent of that
 		return thisPath.charAt(thisLength - 1) == File.separatorChar || thatPath.charAt(thisLength) == File.separatorChar;
@@ -338,12 +440,12 @@ public class LocalFile extends FileStore {
 
 	@Override
 	public void move(IFileStore destFile, int options, IProgressMonitor monitor) throws CoreException {
-		if (!(destFile instanceof LocalFile)) {
+		if (!(destFile instanceof LocalFile destinationFile)) {
 			super.move(destFile, options, monitor);
 			return;
 		}
 		File source = file;
-		File destination = ((LocalFile) destFile).file;
+		File destination = destinationFile.file;
 		boolean overwrite = (options & EFS.OVERWRITE) != 0;
 		SubMonitor subMonitor = SubMonitor.convert(monitor, NLS.bind(Messages.moving, source.getAbsolutePath()), 1);
 		try {
@@ -403,8 +505,8 @@ public class LocalFile extends FileStore {
 				// avoid NoSuchFileException for performance reasons
 				return false;
 			}
-			// isSameFile is faster then using getCanonicalPath 
-			return java.nio.file.Files.isSameFile(source.toPath(), destination.toPath());
+			// isSameFile is faster then using getCanonicalPath
+			return Files.isSameFile(source.toPath(), destination.toPath());
 		} catch (NoSuchFileException e) {
 			// ignore - it is the normal case that the destination does not exist.
 			// slowest path though
@@ -412,42 +514,75 @@ public class LocalFile extends FileStore {
 		}
 	}
 
+	/** @see #readAllBytes(int, IProgressMonitor) */
 	@Override
 	public InputStream openInputStream(int options, IProgressMonitor monitor) throws CoreException {
 		try {
 			return new FileInputStream(file);
 		} catch (FileNotFoundException e) {
-			String message;
-			if (!file.exists()) {
-				message = NLS.bind(Messages.fileNotFound, filePath);
-				Policy.error(EFS.ERROR_NOT_EXISTS, message, e);
-			} else if (file.isDirectory()) {
-				message = NLS.bind(Messages.notAFile, filePath);
-				Policy.error(EFS.ERROR_WRONG_TYPE, message, e);
-			} else {
-				message = NLS.bind(Messages.couldNotRead, filePath);
-				Policy.error(EFS.ERROR_READ, message, e);
-			}
+			handleReadIOException(e);
 			return null;
 		}
 	}
 
+	/** @see #openInputStream(int, IProgressMonitor) */
+	@Override
+	public byte[] readAllBytes(int options, IProgressMonitor monitor) throws CoreException {
+		try {
+			return Files.readAllBytes(file.toPath());
+		} catch (IOException e) {
+			handleReadIOException(e);
+			return null;
+		}
+	}
+
+	private void handleReadIOException(IOException e) throws CoreException {
+		if (!file.exists()) {
+			String message = NLS.bind(Messages.fileNotFound, filePath);
+			Policy.error(EFS.ERROR_NOT_EXISTS, message, e);
+		} else if (file.isDirectory()) {
+			String message = NLS.bind(Messages.notAFile, filePath);
+			Policy.error(EFS.ERROR_WRONG_TYPE, message, e);
+		} else {
+			String message = NLS.bind(Messages.couldNotRead, filePath);
+			Policy.error(EFS.ERROR_READ, message, e);
+		}
+	}
+
+	/** @see #write(byte[], int, IProgressMonitor) */
 	@Override
 	public OutputStream openOutputStream(int options, IProgressMonitor monitor) throws CoreException {
 		try {
 			return new FileOutputStream(file, (options & EFS.APPEND) != 0);
 		} catch (FileNotFoundException e) {
-			checkReadOnlyParent(file, e);
-			String message;
-			String path = filePath;
-			if (file.isDirectory()) {
-				message = NLS.bind(Messages.notAFile, path);
-				Policy.error(EFS.ERROR_WRONG_TYPE, message, e);
-			} else {
-				message = NLS.bind(Messages.couldNotWrite, path);
-				Policy.error(EFS.ERROR_WRITE, message, e);
-			}
+			handleWriteIOException(e);
 			return null;
+		}
+	}
+
+	/** @see #openOutputStream(int, IProgressMonitor) */
+	@Override
+	public void write(byte[] content, int options, IProgressMonitor monitor) throws CoreException {
+		try {
+			boolean append = (options & EFS.APPEND) != 0;
+			if (append) {
+				Files.write(file.toPath(), content, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+			} else {
+				Files.write(file.toPath(), content); // default uses StandardOpenOption.TRUNCATE_EXISTING
+			}
+		} catch (IOException e) {
+			handleWriteIOException(e);
+		}
+	}
+
+	private void handleWriteIOException(IOException e) throws CoreException {
+		checkReadOnlyParent(file, e);
+		if (file.isDirectory()) {
+			String message = NLS.bind(Messages.notAFile, filePath);
+			Policy.error(EFS.ERROR_WRONG_TYPE, message, e);
+		} else {
+			String message = NLS.bind(Messages.couldNotWrite, filePath);
+			Policy.error(EFS.ERROR_WRITE, message, e);
 		}
 	}
 
@@ -486,11 +621,11 @@ public class LocalFile extends FileStore {
 
 	@Override
 	public int compareTo(IFileStore other) {
-		if (other instanceof LocalFile) {
+		if (other instanceof LocalFile otherFile) {
 			// We can compare paths in the local file implementation, because LocalFile don't have a query string, port, or authority
 			// We use `toURI` here because it performs file normalisation e.g. /a/b/../c -> /a/c
 			// The URI is cached by the LocalFile after normalisation so this effectively results in a straight lookup
-			return FileStoreUtil.comparePathSegments(this.toURI().getPath(), ((LocalFile) other).toURI().getPath());
+			return FileStoreUtil.comparePathSegments(this.toURI().getPath(), otherFile.toURI().getPath());
 		}
 		return super.compareTo(other);
 	}

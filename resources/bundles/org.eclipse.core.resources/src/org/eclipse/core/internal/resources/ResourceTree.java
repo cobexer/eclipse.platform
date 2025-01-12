@@ -41,9 +41,9 @@ class ResourceTree implements IResourceTree {
 	/**
 	 * The lock to acquire when the workspace needs to be manipulated
 	 */
-	private ILock lock;
-	private MultiStatus multistatus;
-	private int updateFlags;
+	private final ILock lock;
+	private final MultiStatus multistatus;
+	private final int updateFlags;
 
 	/**
 	 * Constructor for this class.
@@ -250,7 +250,6 @@ class ResourceTree implements IResourceTree {
 	/**
 	 * Returns the local timestamp for a file.
 	 *
-	 * @param file
 	 * @return The local file system timestamp
 	 */
 	private long internalComputeTimestamp(IFile file) {

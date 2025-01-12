@@ -13,49 +13,61 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.session;
 
-import junit.framework.Test;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.harness.FileSystemHelper.getTempDir;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createUniqueString;
+
 import org.eclipse.core.internal.resources.ProjectDescription;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.tests.resources.AutomatedResourceTests;
-import org.eclipse.core.tests.session.WorkspaceSessionTestSuite;
+import org.eclipse.core.tests.harness.session.SessionTestExtension;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Tests for the bug 219568.
  */
-public class TestCreateLinkedResourceInHiddenProject extends WorkspaceSerializationTest {
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+public class TestCreateLinkedResourceInHiddenProject {
+	private static final String PROJECT = "Project";
 
-	public void test1() {
+	@RegisterExtension
+	static SessionTestExtension sessionTestExtension = SessionTestExtension.forPlugin(PI_RESOURCES_TESTS)
+			.withCustomization(SessionTestExtension.createCustomWorkspace()).create();
+
+	@Test
+	@Order(1)
+	public void test1() throws CoreException {
 		/* create some resource handles */
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(PROJECT);
-		try {
-			IProjectDescription desc = new ProjectDescription();
-			desc.setName(PROJECT);
-			project.create(desc, IResource.HIDDEN, getMonitor());
-			project.open(getMonitor());
+		IProjectDescription desc = new ProjectDescription();
+		desc.setName(PROJECT);
+		project.create(desc, IResource.HIDDEN, createTestMonitor());
+		project.open(createTestMonitor());
 
-			workspace.save(true, getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		getWorkspace().save(true, createTestMonitor());
 	}
 
-	public void test2() {
-		IPath path = getTempDir().addTrailingSeparator().append(getUniqueString());
+	@Test
+	@Order(2)
+	public void test2() throws CoreException {
+		IPath path = getTempDir().addTrailingSeparator().append(createUniqueString());
 		path.toFile().mkdir();
 
 		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(PROJECT);
-		IFolder folder = project.getFolder(getUniqueString());
+		IFolder folder = project.getFolder(createUniqueString());
 
-		try {
-			folder.createLink(path, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("2.0", e);
-		}
+		folder.createLink(path, IResource.NONE, createTestMonitor());
 	}
 
-	public static Test suite() {
-		return new WorkspaceSessionTestSuite(AutomatedResourceTests.PI_RESOURCES_TESTS, TestCreateLinkedResourceInHiddenProject.class);
-	}
 }

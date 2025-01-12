@@ -114,7 +114,7 @@ public class MergeSourceViewer implements ISelectionChangedListener,
 
 	class TextOperationAction extends MergeViewerAction {
 
-		private int fOperationCode;
+		private final int fOperationCode;
 
 		TextOperationAction(int operationCode, boolean mutable, boolean selection, boolean content) {
 			this(operationCode, null, mutable, selection, content);
@@ -463,22 +463,22 @@ public class MergeSourceViewer implements ISelectionChangedListener,
 		}
 	}
 
-	private ResourceBundle fResourceBundle;
-	private ICompareContainer fContainer;
-	private SourceViewer fSourceViewer;
+	private final ResourceBundle fResourceBundle;
+	private final ICompareContainer fContainer;
+	private final SourceViewer fSourceViewer;
 	private Position fRegion;
 	private boolean fEnabled= true;
-	private HashMap<String, IAction> fActions= new HashMap<>();
+	private final HashMap<String, IAction> fActions= new HashMap<>();
 	private IDocument fRememberedDocument;
 
 	private boolean fAddSaveAction= true;
 	private boolean isConfigured = false;
 
 	// line number ruler support
-	private IPropertyChangeListener fPreferenceChangeListener;
+	private final IPropertyChangeListener fPreferenceChangeListener;
 	private boolean fShowLineNumber=false;
 	private LineNumberRulerColumn fLineNumberColumn;
-	private List<IAction> textActions = new ArrayList<>();
+	private final List<IAction> textActions = new ArrayList<>();
 	private CommandContributionItem fSaveContributionItem;
 
 	public MergeSourceViewer(SourceViewer sourceViewer,	ResourceBundle bundle, ICompareContainer container) {
@@ -903,7 +903,6 @@ public class MergeSourceViewer implements ISelectionChangedListener,
 
 	/**
 	 * update all actions independent of their type
-	 *
 	 */
 	public void updateActions() {
 		Iterator<IAction> e= fActions.values().iterator();
@@ -931,14 +930,10 @@ public class MergeSourceViewer implements ISelectionChangedListener,
 
 	/**
 	 * specific implementation to support a vertical ruler
-	 * @param x
-	 * @param y
-	 * @param width
-	 * @param height
 	 */
 	public void setBounds (int x, int y, int width, int height) {
 		if(getSourceViewer().getControl() instanceof Composite){
-			((Composite)getSourceViewer().getControl()).setBounds(x, y, width, height);
+			getSourceViewer().getControl().setBounds(x, y, width, height);
 		} else {
 			getSourceViewer().getTextWidget().setBounds(x, y, width, height);
 		}
@@ -946,7 +941,6 @@ public class MergeSourceViewer implements ISelectionChangedListener,
 
 	/**
 	 * handle show/hide line numbers from editor preferences
-	 * @param event
 	 */
 	protected void handlePropertyChangeEvent(PropertyChangeEvent event) {
 

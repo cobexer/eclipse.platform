@@ -13,24 +13,46 @@
  *******************************************************************************/
 package org.eclipse.core.tests.runtime.jobs;
 
-import java.util.concurrent.atomic.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.jobs.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicReference;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.ISchedulingRule;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
+import org.eclipse.core.runtime.jobs.ProgressProvider;
 import org.eclipse.core.tests.harness.FussyProgressMonitor;
 import org.eclipse.core.tests.harness.TestBarrier2;
-import org.junit.Test;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests API methods IJobManager.beginRule and IJobManager.endRule
  */
-public class BeginEndRuleTest extends AbstractJobManagerTest {
+public class BeginEndRuleTest extends AbstractJobTest {
+
+	private static final long TIMEOUT_IN_MILLIS = 10_000;
 
 	/**
 	 * This runnable will try to end the given rule in the Job Manager
 	 */
 	private class RuleEnder implements Runnable {
-		private ISchedulingRule rule;
-		private AtomicIntegerArray status;
+		private final ISchedulingRule rule;
+		private final AtomicIntegerArray status;
 
 		public RuleEnder(ISchedulingRule rule, AtomicIntegerArray status) {
 			this.rule = rule;
@@ -39,15 +61,10 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 
 		@Override
 		public void run() {
-			try {
+			assertThrows(RuntimeException.class, () -> {
 				status.set(0, TestBarrier2.STATUS_RUNNING);
 				manager.endRule(rule);
-				fail("Ending Rule");
-
-			} catch (RuntimeException e) {
-				//should fail
-			}
-
+			});
 		}
 	}
 
@@ -84,6 +101,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		}
 	}
 
+	@Test
 	public void testComplexRuleStarting() {
 		//test how the manager reacts when several different threads try to begin conflicting rules
 		final int NUM_THREADS = 3;
@@ -175,6 +193,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		}
 	}
 
+	@Test
 	public void testSimpleRuleStarting() {
 		//start two jobs, each of which will begin and end a rule several times
 		//while one job starts a rule, the second job's call to begin rule should block that thread
@@ -264,6 +283,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		assertEquals("6.6", IStatus.OK, jobs[1].getResult().getSeverity());
 	}
 
+	@Test
 	public void testComplexRuleContainment() {
 		ISchedulingRule rules[] = new ISchedulingRule[4];
 
@@ -274,19 +294,15 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 
 		//adding multiple rules in correct order
 		int RULE_REPEATS = 10;
-		try {
-			for (int i = 0; i < rules.length - 1; i++) {
-				for (int j = 0; j < RULE_REPEATS; j++) {
-					manager.beginRule(rules[i], null);
-				}
+		for (int i = 0; i < rules.length - 1; i++) {
+			for (int j = 0; j < RULE_REPEATS; j++) {
+				manager.beginRule(rules[i], null);
 			}
-			for (int i = rules.length - 1; i > 0; i--) {
-				for (int j = 0; j < RULE_REPEATS; j++) {
-					manager.endRule(rules[i - 1]);
-				}
+		}
+		for (int i = rules.length - 1; i > 0; i--) {
+			for (int j = 0; j < RULE_REPEATS; j++) {
+				manager.endRule(rules[i - 1]);
 			}
-		} catch (RuntimeException e) {
-			fail("4.0");
 		}
 
 		//adding rules in proper order, then adding a rule from a bypassed branch
@@ -294,70 +310,38 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		for (ISchedulingRule rule : rules) {
 			manager.beginRule(rule, null);
 		}
-		try {
-			manager.endRule(rules[2]);
-			fail("4.1");
-		} catch (RuntimeException e) {
-			//should fail
-			try {
-				manager.endRule(rules[1]);
-				fail("4.2");
-			} catch (RuntimeException e1) {
-				//should fail
-				try {
-					manager.endRule(rules[0]);
-					fail("4.3");
-				} catch (RuntimeException e2) {
-					//should fail
-				}
-			}
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(rules[2]));
+		assertThrows(RuntimeException.class, () -> manager.endRule(rules[1]));
+		assertThrows(RuntimeException.class, () -> manager.endRule(rules[0]));
 		for (int i = rules.length; i > 0; i--) {
 			manager.endRule(rules[i - 1]);
 		}
 	}
 
-	public void _testEndNullRule() {
+	@Test
+	@Disabled("see bug 43460")
+	public void testEndNullRule() {
 		//see bug #43460
 		//end null IScheduleRule without begin
-		try {
-			manager.endRule(null);
-			fail("1.1");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(null));
 	}
 
+	@Test
 	public void testFailureCase() {
 		ISchedulingRule rule1 = new IdentityRule();
 		ISchedulingRule rule2 = new IdentityRule();
 
 		//end without begin
-		try {
-			manager.endRule(rule1);
-			fail("1.0");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(rule1));
 		//simple mismatched begin/end
 		manager.beginRule(rule1, null);
-		try {
-			manager.endRule(rule2);
-			fail("1.2");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(rule2));
 		//should still be able to end the original rule
 		manager.endRule(rule1);
 
 		//mismatched begin/end, ending a null rule
 		manager.beginRule(rule1, null);
-		try {
-			manager.endRule(null);
-			fail("1.3");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(null));
 		//should still be able to end the original rule
 		manager.endRule(rule1);
 	}
@@ -366,6 +350,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 	 * Tests create a job with one scheduling rule, and then attempting
 	 * to acquire an unrelated rule from within that job.
 	 */
+	@Test
 	public void testFailedNestRuleInJob() {
 		final ISchedulingRule rule1 = new PathRule("/testFailedNestRuleInJob/A/");
 		final ISchedulingRule rule2 = new PathRule("/testFailedNestRuleInJob/B/");
@@ -393,6 +378,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		assertTrue("1.1", exception[0].getMessage().indexOf("does not match outer scope rule") > 0);
 	}
 
+	@Test
 	public void testNestedCase() {
 		ISchedulingRule rule1 = new PathRule("/testNestedCase");
 		ISchedulingRule rule2 = new PathRule("/testNestedCase/B");
@@ -400,67 +386,42 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		//ending an outer rule before an inner one
 		manager.beginRule(rule1, null);
 		manager.beginRule(rule2, null);
-		try {
-			manager.endRule(rule1);
-			fail("2.0");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(rule1));
 		manager.endRule(rule2);
 		manager.endRule(rule1);
 
 		//ending a rule that is not open
 		manager.beginRule(rule1, null);
 		manager.beginRule(rule2, null);
-		try {
-			manager.endRule(null);
-			fail("2.1");
-		} catch (RuntimeException e) {
-			//should fail
-		}
+		assertThrows(RuntimeException.class, () -> manager.endRule(null));
 		manager.endRule(rule2);
 		manager.endRule(rule1);
 
 		//adding rules starting with null rule
-		try {
-			manager.beginRule(null, null);
-			manager.beginRule(rule1, null);
-			manager.endRule(rule1);
-			manager.beginRule(rule2, null);
-			manager.endRule(rule2);
-			manager.endRule(null);
-		} catch (RuntimeException e) {
-			//should not fail
-			fail("2.2");
-		}
+		manager.beginRule(null, null);
+		manager.beginRule(rule1, null);
+		manager.endRule(rule1);
+		manager.beginRule(rule2, null);
+		manager.endRule(rule2);
+		manager.endRule(null);
 
 		//adding numerous instances of the same rule
 		int NUM_ADDITIONS = 100;
-		try {
-			for (int i = 0; i < NUM_ADDITIONS; i++) {
-				manager.beginRule(rule1, null);
-			}
-			for (int i = 0; i < NUM_ADDITIONS; i++) {
-				manager.endRule(rule1);
-			}
-		} catch (RuntimeException e) {
-			//should not fail
-			fail("2.3");
+		for (int i = 0; i < NUM_ADDITIONS; i++) {
+			manager.beginRule(rule1, null);
+		}
+		for (int i = 0; i < NUM_ADDITIONS; i++) {
+			manager.endRule(rule1);
 		}
 
 		//adding numerous instances of the null rule
-		try {
-			for (int i = 0; i < NUM_ADDITIONS; i++) {
-				manager.beginRule(null, null);
-			}
-			manager.beginRule(rule1, null);
-			manager.endRule(rule1);
-			for (int i = 0; i < NUM_ADDITIONS; i++) {
-				manager.endRule(null);
-			}
-		} catch (RuntimeException e) {
-			//should not fail
-			fail("2.4");
+		for (int i = 0; i < NUM_ADDITIONS; i++) {
+			manager.beginRule(null, null);
+		}
+		manager.beginRule(rule1, null);
+		manager.endRule(rule1);
+		for (int i = 0; i < NUM_ADDITIONS; i++) {
+			manager.endRule(null);
 		}
 	}
 
@@ -468,6 +429,7 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 	 * Tests a failure where canceling an attempt to beginRule resulted in implicit jobs
 	 * being recycled before they were finished.
 	 */
+	@Test
 	public void testBug44299() {
 		ISchedulingRule rule = new IdentityRule();
 		FussyProgressMonitor monitor = new FussyProgressMonitor();
@@ -489,13 +451,14 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 
 		TestBarrier2.waitForStatus(status, TestBarrier2.STATUS_DONE);
 		if (runner.exception != null) {
-			fail("1.0", runner.exception);
+			throw runner.exception;
 		}
 
 		//finally clear the rule
 		manager.endRule(rule);
 	}
 
+	@Test
 	public void testRuleContainment() {
 		ISchedulingRule rules[] = new ISchedulingRule[4];
 
@@ -506,33 +469,22 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 
 		//simple addition of rules in incorrect containment order
 		manager.beginRule(rules[1], null);
-		try {
-			manager.beginRule(rules[0], null);
-			fail("3.0");
-		} catch (RuntimeException e) {
-			//should fail
-		} finally {
-			//still need to end the rule
-			manager.endRule(rules[0]);
-		}
+		assertThrows(RuntimeException.class, () -> manager.beginRule(rules[0], null));
+		manager.endRule(rules[0]);
 		manager.endRule(rules[1]);
 
 		//adding rules in proper order, then adding a rule from different hierarchy
 		manager.beginRule(rules[1], null);
 		manager.beginRule(rules[2], null);
-		try {
-			manager.beginRule(rules[3], null);
-			fail("3.2");
-		} catch (RuntimeException e) {
-			//should fail
-		} finally {
-			manager.endRule(rules[3]);
-		}
+		assertThrows(RuntimeException.class, () -> manager.beginRule(rules[3], null));
+		manager.endRule(rules[3]);
+
 		//should still be able to end the rules
 		manager.endRule(rules[2]);
 		manager.endRule(rules[1]);
 	}
 
+	@Test
 	public void testSimpleOtherThreadAccess() {
 		//ending a rule started on this thread from another thread
 		ISchedulingRule rule1 = new IdentityRule();
@@ -627,58 +579,78 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 		}
 	}
 
+	@Test
 	public void testIgnoreScheduleThreadJob() throws Exception {
-		final int[] count = new int[1];
-		JobChangeAdapter a = new JobChangeAdapter() {
+		Set<Job> jobsStartedRunning = Collections.synchronizedSet(new HashSet<>());
+		JobChangeAdapter runningThreadStoreListener = new JobChangeAdapter() {
 			@Override
-			public void running(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
-				count[0]++;
+			public void running(IJobChangeEvent event) {
+				jobsStartedRunning.add(event.getJob());
 			}
 		};
-		Job.getJobManager().addJobChangeListener(a);
+		Job.getJobManager().addJobChangeListener(runningThreadStoreListener);
 		IdentityRule rule = new IdentityRule();
+		Job rescheduledJob = null;
 		try {
 			Job.getJobManager().beginRule(rule, null);
-			Job.getJobManager().currentJob().schedule();
+			rescheduledJob = Job.getJobManager().currentJob();
+			rescheduledJob.schedule();
 		} finally {
 			Job.getJobManager().endRule(rule);
 		}
-		Thread.sleep(250);
-		Job.getJobManager().removeJobChangeListener(a);
-		assertEquals("ThreadJob did not ignore reschedule", 0, count[0]);
+		rescheduledJob.join(TIMEOUT_IN_MILLIS, new NullProgressMonitor());
+		Job.getJobManager().removeJobChangeListener(runningThreadStoreListener);
+		assertThat(rescheduledJob.getState()).as("state of job expected to be finished").isEqualTo(Job.NONE);
+		assertThat(jobsStartedRunning).as("started jobs").doesNotContain(rescheduledJob);
 	}
 
+	@Test
 	public void testRunThreadJobIsNotRescheduled() throws Exception {
-		final int[] count = new int[1];
-		JobChangeAdapter a = new JobChangeAdapter() {
+		Set<Job> jobsStartedRunning = Collections.synchronizedSet(new HashSet<>());
+		JobChangeAdapter runningThreadStoreListener = new JobChangeAdapter() {
 			@Override
-			public void running(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
-				count[0]++;
+			public void running(IJobChangeEvent event) {
+				jobsStartedRunning.add(event.getJob());
 			}
 		};
-		Job.getJobManager().addJobChangeListener(a);
+		Job.getJobManager().addJobChangeListener(runningThreadStoreListener);
 		IdentityRule rule = new IdentityRule();
+		Job scheduledJob = null;
 		try {
 			Job.getJobManager().beginRule(rule, null);
+			scheduledJob = Job.getJobManager().currentJob();
 		} finally {
 			Job.getJobManager().endRule(rule);
 		}
-		Thread.sleep(250);
-		Job.getJobManager().removeJobChangeListener(a);
-		assertEquals("ThreadJob did not ignore reschedule", 0, count[0]);
+		scheduledJob.join(TIMEOUT_IN_MILLIS, new NullProgressMonitor());
+		Job.getJobManager().removeJobChangeListener(runningThreadStoreListener);
+		assertThat(scheduledJob.getState()).as("state of job expected to be finished").isEqualTo(Job.NONE);
+		assertThat(jobsStartedRunning).as("started jobs").doesNotContain(scheduledJob);
 	}
 
+	@Test
 	public void testRunNestedAcquireThreadIsNotRescheduled() throws Exception {
-		final PathRule rule = new PathRule(getName());
-		final PathRule subRule = new PathRule(getName() + "/subRule");
+		String name = "test";
+		final PathRule rule = new PathRule(name);
+		final PathRule subRule = new PathRule(name + "/subRule");
 
-		final int[] count = new int[1];
-
-		final Job job = new Job(getName() + "acquire") {
+		Set<Job> jobsStartedRunning = Collections.synchronizedSet(new HashSet<>());
+		JobChangeAdapter runningThreadStoreListener = new JobChangeAdapter() {
+			@Override
+			public void running(IJobChangeEvent event) {
+				jobsStartedRunning.add(event.getJob());
+			}
+		};
+		Job.getJobManager().addJobChangeListener(runningThreadStoreListener);
+		TestBarrier2 waitForThreadJob = new TestBarrier2();
+		AtomicReference<Job> scheduledJob = new AtomicReference<>();
+		final Job job = new Job(name + "acquire") {
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
 				try {
 					Job.getJobManager().beginRule(subRule, null);
+					scheduledJob.set(Job.getJobManager().currentJob());
+					waitForThreadJob.setStatus(TestBarrier2.STATUS_DONE);
 				} finally {
 					Job.getJobManager().endRule(subRule);
 				}
@@ -686,21 +658,13 @@ public class BeginEndRuleTest extends AbstractJobManagerTest {
 			}
 		};
 		job.setRule(rule);
-
-		JobChangeAdapter a = new JobChangeAdapter() {
-			@Override
-			public void running(org.eclipse.core.runtime.jobs.IJobChangeEvent event) {
-				if (event.getJob() == job) {
-					return;
-				}
-				count[0]++;
-			}
-		};
-		Job.getJobManager().addJobChangeListener(a);
 		job.schedule();
-		Thread.sleep(250);
-		Job.getJobManager().removeJobChangeListener(a);
-		assertEquals("ThreadJob did not ignore reschedule", 0, count[0]);
+		waitForThreadJob.waitForStatus(TestBarrier2.STATUS_DONE);
+		job.join(TIMEOUT_IN_MILLIS, new NullProgressMonitor());
+		scheduledJob.get().join(TIMEOUT_IN_MILLIS, new NullProgressMonitor());
+		Job.getJobManager().removeJobChangeListener(runningThreadStoreListener);
+		assertThat(scheduledJob.get()).as("job in nested rule expected to be same as outer job").isEqualTo(job);
+		assertThat(job.getState()).as("state of job expected to be finished").isEqualTo(Job.NONE);
 	}
 
 }

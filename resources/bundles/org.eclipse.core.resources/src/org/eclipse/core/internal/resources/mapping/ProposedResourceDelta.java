@@ -25,10 +25,10 @@ import org.eclipse.core.runtime.*;
 public final class ProposedResourceDelta extends PlatformObject implements IResourceDelta {
 	protected static int KIND_MASK = 0xFF;
 
-	private HashMap<String, ProposedResourceDelta> children = new HashMap<>(8);
+	private final HashMap<String, ProposedResourceDelta> children = new HashMap<>(8);
 	private IPath movedFromPath;
 	private IPath movedToPath;
-	private IResource resource;
+	private final IResource resource;
 	private int status;
 
 	public ProposedResourceDelta(IResource resource) {
@@ -56,7 +56,6 @@ public final class ProposedResourceDelta extends PlatformObject implements IReso
 
 	/**
 	 * Adds a child delta to the list of children for this delta node.
-	 * @param delta
 	 */
 	protected void add(ProposedResourceDelta delta) {
 		if (children.isEmpty() && status == 0)

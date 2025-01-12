@@ -19,7 +19,6 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Objects;
 import java.util.Stack;
-import javax.inject.Named;
 import org.eclipse.e4.core.contexts.Active;
 import org.eclipse.e4.core.contexts.IEclipseContext;
 import org.eclipse.e4.core.contexts.RunAndTrack;
@@ -27,6 +26,7 @@ import org.eclipse.e4.core.di.IInjector;
 import org.eclipse.e4.core.di.suppliers.IObjectDescriptor;
 import org.eclipse.e4.core.di.suppliers.IRequestor;
 import org.eclipse.e4.core.di.suppliers.PrimaryObjectSupplier;
+import org.eclipse.e4.core.internal.di.AnnotationLookup;
 import org.eclipse.e4.core.internal.di.Requestor;
 
 public class ContextObjectSupplier extends PrimaryObjectSupplier {
@@ -189,9 +189,9 @@ public class ContextObjectSupplier extends PrimaryObjectSupplier {
 	}
 
 	private String getKey(IObjectDescriptor descriptor) {
-		if (descriptor.hasQualifier(Named.class)) {
-			Named namedAnnotation = descriptor.getQualifier(Named.class);
-			return namedAnnotation.value();
+		String value = AnnotationLookup.getQualifierValue(descriptor);
+		if (value != null) {
+			return value;
 		}
 		Type elementType = descriptor.getDesiredType();
 		return typeToString(elementType);

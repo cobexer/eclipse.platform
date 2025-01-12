@@ -15,7 +15,8 @@ package org.eclipse.core.internal.dtree;
 
 import java.io.DataOutput;
 import java.io.IOException;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IPath;
 
 /**
  * Class for writing a single data tree (no parents) to an output stream.
@@ -154,11 +155,11 @@ public class DataTreeWriter {
 	 *  only write up to this depth.  A depth of infinity is given
 	 *  by the constant D_INFINITE.
 	 */
-	public void writeTree(DeltaDataTree tree, IPath path, int depth, DataOutput output) throws IOException {
-		this.output = output;
+	public void writeTree(DeltaDataTree tree, IPath path, int depth, DataOutput dataOutput) throws IOException {
+		this.output = dataOutput;
 		/* tunnel down relevant path */
 		AbstractDataTreeNode node = tree.getRootNode();
-		IPath currentPath = Path.ROOT;
+		IPath currentPath = IPath.ROOT;
 		String[] segments = path.segments();
 		for (String nextSegment : segments) {
 			/* write this node to the output */

@@ -38,7 +38,6 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.eclipse.debug.core.ILaunch;
@@ -277,7 +276,7 @@ public final class AntLaunchingUtil {
 	 */
 	public static IFile getFile(String fullPath) {
 		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
-		return root.getFile(new Path(fullPath));
+		return root.getFile(IPath.fromOSString(fullPath));
 	}
 
 	/**
@@ -286,8 +285,6 @@ public final class AntLaunchingUtil {
 	 *
 	 * Attempts to handle linked files; the first found linked file with the correct path is returned.
 	 *
-	 * @param path
-	 * @param buildFileParent
 	 * @return file or <code>null</code>
 	 * @see org.eclipse.core.resources.IWorkspaceRoot#findFilesForLocation(IPath)
 	 */
@@ -295,7 +292,7 @@ public final class AntLaunchingUtil {
 		if (path == null) {
 			return null;
 		}
-		IPath filePath = new Path(path);
+		IPath filePath = IPath.fromOSString(path);
 		IFile file = null;
 		URI location = filePath.makeAbsolute().toFile().toURI();
 		IFile[] files = ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(location);
@@ -308,7 +305,7 @@ public final class AntLaunchingUtil {
 			try {
 				// this call is ok if buildFileParent is null
 				relativeFile = FileUtils.getFileUtils().resolveFile(buildFileParent, path);
-				filePath = new Path(relativeFile.getAbsolutePath());
+				filePath = IPath.fromOSString(relativeFile.getAbsolutePath());
 				location = filePath.makeAbsolute().toFile().toURI();
 				files = ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(location);
 				if (files.length > 0) {
@@ -400,11 +397,11 @@ public final class AntLaunchingUtil {
 		String fileName = null;
 		String lineNumber = ""; //$NON-NLS-1$
 		int fileStart = 0;
-		int index = message.indexOf("xml"); //$NON-NLS-1$
+		int index = message.indexOf(".xml"); //$NON-NLS-1$
 		if (index > 0) {
-			int numberStart = index + 4;
+			int numberStart = index + 5;
 			int numberEnd = message.indexOf(':', numberStart);
-			int fileEnd = index + 3;
+			int fileEnd = index + 4;
 			if (numberStart > 0 && fileEnd > 0) {
 				fileName = message.substring(fileStart, fileEnd).trim();
 				if (numberEnd > 0) {
@@ -421,7 +418,7 @@ public final class AntLaunchingUtil {
 			catch (NumberFormatException e) {
 				// do nothing
 			}
-			URI location = new Path(fileName).makeAbsolute().toFile().toURI();
+			URI location = IPath.fromOSString(fileName).makeAbsolute().toFile().toURI();
 			IFile[] files = ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(location);
 			IFile file = null;
 			if (files.length > 0) {

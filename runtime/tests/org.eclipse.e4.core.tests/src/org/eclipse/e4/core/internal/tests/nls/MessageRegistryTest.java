@@ -20,8 +20,6 @@ import static org.junit.Assert.assertNotNull;
 
 import java.util.Locale;
 
-import javax.inject.Inject;
-
 import org.eclipse.e4.core.contexts.ContextInjectionFactory;
 import org.eclipse.e4.core.contexts.EclipseContextFactory;
 import org.eclipse.e4.core.contexts.IEclipseContext;
@@ -29,6 +27,8 @@ import org.eclipse.e4.core.services.translation.TranslationService;
 import org.junit.Before;
 import org.junit.Test;
 import org.osgi.framework.FrameworkUtil;
+
+import jakarta.inject.Inject;
 
 public class MessageRegistryTest {
 
@@ -96,7 +96,7 @@ public class MessageRegistryTest {
 		TestObject o = ContextInjectionFactory.make(TestObject.class, this.context);
 
 		TestLocalizableObject control = new TestLocalizableObject();
-		o.registry.register(control::setLocalizableValue, (m) -> m.message);
+		o.registry.register(control::setLocalizableValue, m -> m.message);
 
 		// test value is set
 		assertNotNull(control.getLocalizableValue());

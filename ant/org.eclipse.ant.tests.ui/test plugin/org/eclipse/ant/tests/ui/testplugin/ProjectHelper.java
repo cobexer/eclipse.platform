@@ -32,7 +32,6 @@ import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationType;
@@ -53,9 +52,9 @@ import org.eclipse.ui.wizards.datatransfer.ImportOperation;
 @SuppressWarnings("restriction")
 public class ProjectHelper {
 
-	public static final IPath TEST_BUILDFILES_DIR = new Path("testbuildfiles"); //$NON-NLS-1$
-	public static final IPath TEST_RESOURCES_DIR = new Path("testresources"); //$NON-NLS-1$
-	public static final IPath TEST_LIB_DIR = new Path("testlib"); //$NON-NLS-1$
+	public static final IPath TEST_BUILDFILES_DIR = IPath.fromOSString("testbuildfiles"); //$NON-NLS-1$
+	public static final IPath TEST_RESOURCES_DIR = IPath.fromOSString("testresources"); //$NON-NLS-1$
+	public static final IPath TEST_LIB_DIR = IPath.fromOSString("testlib"); //$NON-NLS-1$
 
 	public static final String PROJECT_NAME = "Ant UI Tests"; //$NON-NLS-1$
 
@@ -153,7 +152,6 @@ public class ProjectHelper {
 	/**
 	 * Creates two launch configurations one standard one and one for a separate VM
 	 * 
-	 * @param launchConfigName
 	 * @throws Exception
 	 * 
 	 * @since 3.5
@@ -215,10 +213,7 @@ public class ProjectHelper {
 	/**
 	 * Creates a launch configuration with the given name in the given location
 	 * 
-	 * @param launchConfigName
-	 * @param path
 	 * @return the handle to the new launch configuration
-	 * @throws CoreException
 	 */
 	public static ILaunchConfiguration createLaunchConfiguration(String launchConfigName, String path) throws CoreException {
 		ILaunchConfigurationType type = AbstractAntUITest.getLaunchManager().getLaunchConfigurationType(IAntLaunchConstants.ID_ANT_LAUNCH_CONFIGURATION_TYPE);

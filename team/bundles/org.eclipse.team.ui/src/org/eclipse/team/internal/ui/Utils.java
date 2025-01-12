@@ -13,7 +13,6 @@
  *******************************************************************************/
 package org.eclipse.team.internal.ui;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
@@ -184,7 +183,7 @@ public class Utils {
 		}
 	}
 
-	public static final Comparator<IResource> resourceComparator = new Comparator<IResource>() {
+	public static final Comparator<IResource> resourceComparator = new Comparator<>() {
 		@Override
 		public boolean equals(Object obj) {
 			return false;
@@ -442,7 +441,6 @@ public class Utils {
 	 * @deprecated As of 3.5, replaced by
 	 *             {@link #updateLabels(SyncInfo, CompareConfiguration, IProgressMonitor)}
 	 */
-	@SuppressWarnings("javadoc")
 	@Deprecated
 	public static void updateLabels(SyncInfo sync, CompareConfiguration config) {
 		updateLabels(sync, config, null);
@@ -618,7 +616,6 @@ public class Utils {
 
 	/**
 	 * Returns the list of resources contained in the given elements.
-	 * @param elements
 	 * @return the list of resources contained in the given elements.
 	 */
 	private static IResource[] getResources(Object[] elements, List<Object> nonResources,
@@ -774,36 +771,6 @@ public class Utils {
 			}
 		}
 		job.schedule();
-	}
-
-	public static byte[] readBytes(InputStream in) {
-		ByteArrayOutputStream bos= new ByteArrayOutputStream();
-		try {
-			while (true) {
-				int c= in.read();
-				if (c == -1)
-					break;
-				bos.write(c);
-			}
-
-		} catch (IOException ex) {
-			return null;
-
-		} finally {
-			if (in != null) {
-				try {
-					in.close();
-				} catch (IOException x) {
-					// silently ignored
-				}
-			}
-			try {
-				bos.close();
-			} catch (IOException x) {
-				// silently ignored
-			}
-		}
-		return bos.toByteArray();
 	}
 
 	public static boolean equalObject(Object o1, Object o2) {
@@ -1051,9 +1018,7 @@ public class Utils {
 	 * Return whether the editor associated with a descriptor is a text editor
 	 * (i.e. an instance of AbstractDecoratedTextEditor).
 	 * See bug 99568 for a request to move the createEditor method to IEditorDescriptor.
-	 * @param descriptor
 	 * @return whether the editor associated with a descriptor is a text editor
-	 * @throws CoreException
 	 */
 	public static boolean isTextEditor(IEditorDescriptor descriptor) throws CoreException {
 		if (!(descriptor instanceof EditorDescriptor))
@@ -1152,22 +1117,15 @@ public class Utils {
 	}
 
 	private static IContentType getContentType(FileRevisionEditorInput editorInput) {
-		IContentType type = null;
-		try {
-			InputStream contents = editorInput.getStorage().getContents();
-			try {
-				type = getContentType(editorInput.getFileRevision().getName(), contents);
-			} finally {
-				try {
-					contents.close();
-				} catch (IOException e) {
-					// ignore
-				}
-			}
+		try (InputStream contents = editorInput.getStorage().getContents()) {
+			return getContentType(editorInput.getFileRevision().getName(), contents);
+		} catch (IOException e) {
+			// ignore
 		} catch (CoreException e) {
-			TeamUIPlugin.log(IStatus.ERROR, NLS.bind("An error occurred reading the contents of file {0}", new String[] { editorInput.getName() }), e); //$NON-NLS-1$
+			TeamUIPlugin.log(IStatus.ERROR, NLS.bind("An error occurred reading the contents of file {0}", //$NON-NLS-1$
+					new String[] { editorInput.getName() }), e);
 		}
-		return type;
+		return null;
 	}
 
 	private static IContentType getContentType(String fileName, InputStream contents) {
@@ -1205,8 +1163,6 @@ public class Utils {
 	 *
 	 * @param input
 	 *            the input being opened
-	 * @param page
-	 * @param editorInputClasses
 	 * @return an EditorPart or <code>null</code> if none can be found
 	 */
 	public static IEditorPart findReusableCompareEditor(

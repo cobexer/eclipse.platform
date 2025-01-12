@@ -13,12 +13,24 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.builders;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Map;
 import org.eclipse.core.internal.resources.ResourceException;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 
 /**
  * A <code>SortBuilder</code> maintains a collection of files located
@@ -27,7 +39,6 @@ import org.eclipse.core.runtime.*;
  * The content (bytes) of each sorted file is the content of the
  * unsorted file it mirrors, but sorted in either ascending or
  * descending order depending on the build command.
- * @see SortBuilderPlugin
  */
 public class SortBuilder extends TestBuilder {
 	public static final String BUILDER_NAME = "org.eclipse.core.tests.resources.sortbuilder";
@@ -100,7 +111,6 @@ public class SortBuilder extends TestBuilder {
 	 * Sort the given unsorted file in either ascending or descending
 	 * order (depending on the build command) and update its corresponding
 	 * sorted file with the result.
-	 * @param unsortedFile
 	 * @exception Exception if the build can't proceed
 	 */
 	private void build(IFile unsortedFile) throws CoreException {
@@ -127,15 +137,9 @@ public class SortBuilder extends TestBuilder {
 		IFile sortedFile = (IFile) convertToSortedResource(unsortedFile);
 		createResource(sortedFile);
 
-		ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
-		sortedFile.setContents(bis, true, false, null);
+		sortedFile.setContents(bytes, true, false, null);
 	}
 
-	/**
-	 * Implements the inherited abstract method in
-	 * <code>BaseBuilder</code>.
-	 * @see BaseBuilder#build(IResourceDelta,int,IProgressMonitor)
-	 */
 	@Override
 	protected IProject[] build(int kind, Map<String, String> args, IProgressMonitor monitor) throws CoreException {
 		arguments = args;
@@ -170,7 +174,6 @@ public class SortBuilder extends TestBuilder {
 	 * Converts the given unsorted resource handle to its corresponding
 	 * sorted resource handle.  Neither resources need exist, but their
 	 * types must be a folder (FOLDER) or a file (FILE).
-	 * @param IResource
 	 * @exception Exception if the resource is not a folder or a file
 	 */
 	private IResource convertToSortedResource(IResource unsortedResource) throws CoreException {
@@ -190,7 +193,6 @@ public class SortBuilder extends TestBuilder {
 	/**
 	 * Creates the given resource, and its parent if necessary.  The
 	 * resource must not be a solution and its project must exist.
-	 * @param resource
 	 * @exception Exception if the resource is not a folder or a file
 	 */
 	private void createResource(IResource resource) throws CoreException {
@@ -214,7 +216,6 @@ public class SortBuilder extends TestBuilder {
 	/**
 	 * Deletes the given resource, and its children if necessary.  The
 	 * resource must not be a solution and its project must exist.
-	 * @param resource
 	 * @exception CoreException if the resource is not a folder or a file
 	 */
 	private void deleteResource(IResource resource) throws CoreException {
@@ -232,7 +233,7 @@ public class SortBuilder extends TestBuilder {
 			}
 			folder.delete(true, null);
 		} else if (type == IResource.FILE) {
-			((IFile) resource).delete(true, null);
+			resource.delete(true, null);
 		} else {
 			throw new ResourceException(IResourceStatus.RESOURCE_WRONG_TYPE, null, "Wrong resource type", null);
 		}
@@ -367,7 +368,6 @@ public class SortBuilder extends TestBuilder {
 
 	/**
 	 * Sorts the specified bytes in either ascending or descending order.
-	 * @param bytes
 	 * @param start position of first byte
 	 * @param end position of last byte
 	 * @param ascendingOrder true if the bytes are to be sorted in
@@ -419,7 +419,6 @@ public class SortBuilder extends TestBuilder {
 
 	/**
 	 * Swaps the specified bytes in the given byte array.
-	 * @param bytes
 	 * @param pos1 the position of the first byte
 	 * @param pos2 the position of the second byte
 	 */

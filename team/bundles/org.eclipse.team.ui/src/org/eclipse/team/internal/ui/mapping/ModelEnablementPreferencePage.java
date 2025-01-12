@@ -133,8 +133,7 @@ public class ModelEnablementPreferencePage extends PreferencePage implements IWo
 			}
 			@Override
 			public void dispose() {
-				for (Object element : images.values()) {
-					Image image = (Image) element;
+				for (Image image : images.values()) {
 					image.dispose();
 				}
 				super.dispose();
@@ -174,7 +173,6 @@ public class ModelEnablementPreferencePage extends PreferencePage implements IWo
 		tableViewer.setCheckedElements(previosulyEnabled.toArray());
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public boolean performOk() {
 		Object[] checked = tableViewer.getCheckedElements();

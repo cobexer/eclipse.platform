@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2006 IBM Corporation and others.
+ * Copyright (c) 2000, 2024 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -29,7 +29,7 @@ public class StatusLineCLabelContribution extends ContributionItem {
 
 	public final static int DEFAULT_CHAR_WIDTH = 40;
 
-	private int charWidth;
+	private final int charWidth;
 	private CLabel label;
 	private Image image;
 	private String text = ""; //$NON-NLS-1$
@@ -56,7 +56,7 @@ public class StatusLineCLabelContribution extends ContributionItem {
 			GC gc = new GC(parent);
 			gc.setFont(parent.getFont());
 			FontMetrics fm = gc.getFontMetrics();
-			widthHint = fm.getAverageCharWidth() * charWidth;
+			widthHint = (int) (fm.getAverageCharacterWidth() * charWidth);
 			heightHint = fm.getHeight();
 			gc.dispose();
 		}

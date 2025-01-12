@@ -43,7 +43,7 @@ import org.eclipse.ant.internal.launching.remote.RemoteAntMessages;
 public class RemoteAntBuildLogger extends DefaultLogger {
 
 	/** Time of the start of the build */
-	private long fStartTime = System.currentTimeMillis();
+	private final long fStartTime = System.currentTimeMillis();
 
 	/**
 	 * The client socket.
@@ -236,7 +236,6 @@ public class RemoteAntBuildLogger extends DefaultLogger {
 		}
 	}
 
-	@SuppressWarnings("unused")
 	@Override
 	public void messageLogged(BuildEvent event) {
 		if (event.getPriority() > msgOutputLevel && event.getPriority() != InternalAntRunner.MSG_PROJECT_HELP) {
@@ -253,7 +252,7 @@ public class RemoteAntBuildLogger extends DefaultLogger {
 				return;
 			}
 			if (fEventQueue == null) {
-				fEventQueue = new ArrayList<BuildEvent>(10);
+				fEventQueue = new ArrayList<>(10);
 			}
 			fEventQueue.add(event);
 			return;

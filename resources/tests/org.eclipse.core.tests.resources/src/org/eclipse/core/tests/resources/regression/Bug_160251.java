@@ -13,107 +13,121 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import org.eclipse.core.filesystem.*;
-import org.eclipse.core.resources.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInFileSystem;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.getFileStore;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.function.Predicate;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.URIUtil;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests regression of bug 160251.  In this case, attempting to move a project
  * to an existing directory on disk failed, but should succeed as long as
  * the destination directory is empty.
  */
-public class Bug_160251 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_160251 {
+
+	private static final Predicate<IResource> isSynchronizedDepthInfinite = resource -> resource
+			.isSynchronized(IResource.DEPTH_INFINITE);
+
+	private @TempDir Path tempDirectory;
+
 	/**
 	 * The destination directory does not exist.
 	 */
-	public void testNonExistentDestination() {
+	@Test
+	public void testNonExistentDestination() throws CoreException, IOException {
 		IProject source = getWorkspace().getRoot().getProject("project");
 		IFile sourceFile = source.getFile("Important.txt");
-		IFileStore destination = getTempStore();
+		IFileStore destination = getFileStore(tempDirectory);
 		IFileStore destinationFile = destination.getChild(sourceFile.getName());
-		ensureExistsInWorkspace(source, true);
-		ensureExistsInWorkspace(sourceFile, true);
+		createInWorkspace(source);
+		createInWorkspace(sourceFile);
 
 		//move the project (should succeed)
-		try {
-			IProjectDescription description = source.getDescription();
-			description.setLocationURI(destination.toURI());
-			source.move(description, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IProjectDescription description = source.getDescription();
+		description.setLocationURI(destination.toURI());
+		source.move(description, IResource.NONE, createTestMonitor());
+
 		//ensure project still exists
-		assertTrue("2.0", source.exists());
-		assertTrue("2.1", sourceFile.exists());
-		assertTrue("2.2", source.isSynchronized(IResource.DEPTH_INFINITE));
-		assertTrue("2.3", URIUtil.equals(source.getLocationURI(), destination.toURI()));
-		assertTrue("2.4", URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
+		assertThat(source).matches(IResource::exists, "exists");
+		assertThat(sourceFile).matches(IResource::exists, "exists");
+		assertThat(source).matches(isSynchronizedDepthInfinite, "is synchronized");
+		assertTrue(URIUtil.equals(source.getLocationURI(), destination.toURI()));
+		assertTrue(URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
 	}
 
 	/**
 	 * The destination directory exists, but is empty
 	 */
-	public void testEmptyDestination() {
+	@Test
+	public void testEmptyDestination() throws CoreException, IOException {
 		IProject source = getWorkspace().getRoot().getProject("project");
 		IFile sourceFile = source.getFile("Important.txt");
-		IFileStore destination = getTempStore();
+		IFileStore destination = getFileStore(tempDirectory);
 		IFileStore destinationFile = destination.getChild(sourceFile.getName());
-		ensureExistsInWorkspace(source, true);
-		ensureExistsInWorkspace(sourceFile, true);
-		try {
-			destination.mkdir(EFS.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("0.99", e);
-		}
+		createInWorkspace(source);
+		createInWorkspace(sourceFile);
+		destination.mkdir(EFS.NONE, createTestMonitor());
 
 		//move the project (should succeed)
-		try {
-			IProjectDescription description = source.getDescription();
-			description.setLocationURI(destination.toURI());
-			source.move(description, IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IProjectDescription description = source.getDescription();
+		description.setLocationURI(destination.toURI());
+		source.move(description, IResource.NONE, createTestMonitor());
+
 		//ensure project still exists
-		assertTrue("2.0", source.exists());
-		assertTrue("2.1", sourceFile.exists());
-		assertTrue("2.2", source.isSynchronized(IResource.DEPTH_INFINITE));
-		assertTrue("2.3", URIUtil.equals(source.getLocationURI(), destination.toURI()));
-		assertTrue("2.4", URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
+		assertThat(source).matches(IResource::exists, "exists");
+		assertThat(sourceFile).matches(IResource::exists, "exists");
+		assertThat(source).matches(isSynchronizedDepthInfinite, "is synchronized");
+		assertTrue(URIUtil.equals(source.getLocationURI(), destination.toURI()));
+		assertTrue(URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
 	}
 
 	/**
 	 * The destination directory exists, and contains an overlapping file. This should fail.
 	 */
-	public void testOccupiedDestination() {
+	@Test
+	public void testOccupiedDestination() throws Exception {
 		IProject source = getWorkspace().getRoot().getProject("project");
 		IFile sourceFile = source.getFile("Important.txt");
-		IFileStore destination = getTempStore();
+		IFileStore destination = getFileStore(tempDirectory);
 		IFileStore destinationFile = destination.getChild(sourceFile.getName());
-		ensureExistsInWorkspace(source, true);
-		ensureExistsInWorkspace(sourceFile, true);
-		try {
-			destination.mkdir(EFS.NONE, getMonitor());
-			createFileInFileSystem(destinationFile, getRandomContents());
-		} catch (CoreException e) {
-			fail("0.99", e);
-		}
+		createInWorkspace(source);
+		createInWorkspace(sourceFile);
+		destination.mkdir(EFS.NONE, createTestMonitor());
+		createInFileSystem(destinationFile);
 
 		//move the project (should fail)
-		try {
-			IProjectDescription description = source.getDescription();
-			description.setLocationURI(destination.toURI());
-			source.move(description, IResource.NONE, getMonitor());
-			fail("1.0");
-		} catch (CoreException e) {
-			//should fail
-		}
+		IProjectDescription description = source.getDescription();
+		description.setLocationURI(destination.toURI());
+		assertThrows(CoreException.class, () -> source.move(description, IResource.NONE, createTestMonitor()));
+
 		//ensure project still exists in old location
-		assertTrue("2.0", source.exists());
-		assertTrue("2.1", sourceFile.exists());
-		assertTrue("2.2", source.isSynchronized(IResource.DEPTH_INFINITE));
-		assertTrue("2.3", !URIUtil.equals(source.getLocationURI(), destination.toURI()));
-		assertTrue("2.4", !URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
+		assertThat(source).matches(IResource::exists, "exists");
+		assertThat(sourceFile).matches(IResource::exists, "exists");
+		assertThat(source).matches(isSynchronizedDepthInfinite, "is synchronized");
+		assertFalse(URIUtil.equals(source.getLocationURI(), destination.toURI()));
+		assertFalse(URIUtil.equals(sourceFile.getLocationURI(), destinationFile.toURI()));
 	}
+
 }

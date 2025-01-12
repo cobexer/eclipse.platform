@@ -13,13 +13,20 @@
  *******************************************************************************/
 package org.eclipse.team.tests.ui;
 
+import static java.util.Collections.synchronizedList;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInputStream;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
-
-import junit.framework.Test;
 
 import org.eclipse.compare.CompareConfiguration;
 import org.eclipse.compare.CompareViewerSwitchingPane;
@@ -31,7 +38,6 @@ import org.eclipse.compare.internal.MergeSourceViewer;
 import org.eclipse.compare.structuremergeviewer.Differencer;
 import org.eclipse.compare.structuremergeviewer.ICompareInput;
 import org.eclipse.compare.tests.ReflectionUtils;
-import org.eclipse.core.internal.runtime.RuntimeLog;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
@@ -39,6 +45,8 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.ILogListener;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.graphics.Image;
@@ -47,54 +55,53 @@ import org.eclipse.team.internal.ui.mapping.AbstractCompareInput;
 import org.eclipse.team.internal.ui.mapping.CompareInputChangeNotifier;
 import org.eclipse.team.internal.ui.synchronize.LocalResourceTypedElement;
 import org.eclipse.team.internal.ui.synchronize.SaveablesCompareEditorInput;
-import org.eclipse.team.tests.core.TeamTest;
 import org.eclipse.team.ui.synchronize.SaveableCompareEditorInput;
 import org.eclipse.ui.PlatformUI;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class SaveableCompareEditorInputTest extends TeamTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class SaveableCompareEditorInputTest {
 
-	public static Test suite() {
-		return suite(SaveableCompareEditorInputTest.class);
-	}
 
 	private static final String COMPARE_EDITOR = CompareUIPlugin.PLUGIN_ID
 			+ ".CompareEditor"; //$NON-NLS-1$
 
 	private IFile file1;
 	private IFile file2;
-	private String appendFileContents = "_append";
-	private String fileContents1 = "FileContents";
-	private String fileContents2 = "FileContents2";
-	private TestLogListener logListener = new TestLogListener();
+	private final String appendFileContents = "_append";
+	private final String fileContents1 = "FileContents";
+	private final String fileContents2 = "FileContents2";
+	private final TestLogListener logListener = new TestLogListener();
+	private List<IStatus> errorsInListener = synchronizedList(new ArrayList<>());
 	private IProject project;
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-
-		project = createProject("Project_", new String[] {
-				"File1.txt", "File2.txt" });
-
+	@BeforeEach
+	public void setUp() throws Exception {
+		project = getWorkspace().getRoot().getProject("Project");
+		createInWorkspace(project);
 		file1 = project.getFile("File1.txt");
 		file2 = project.getFile("File2.txt");
-		file1.setContents(new ByteArrayInputStream(fileContents1.getBytes()),
-				true, true, null);
-		file2.setContents(new ByteArrayInputStream(fileContents2.getBytes()),
-				true, true, null);
+		createInWorkspace(file1);
+		createInWorkspace(file2);
+		file1.setContents(createInputStream(fileContents1), true, true, null);
+		file2.setContents(createInputStream(fileContents2), true, true, null);
 
-		RuntimeLog.addLogListener(logListener);
+		Platform.addLogListener(logListener);
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@AfterEach
+	public void tearDown() throws Exception {
 		// remove log listener
-		RuntimeLog.removeLogListener(logListener);
-		super.tearDown();
+		Platform.removeLogListener(logListener);
+		assertThat(errorsInListener).as("logged errors").isEmpty();
 	}
 
 	private class TestFileElement implements ITypedElement {
 
-		private IFile file;
+		private final IFile file;
 
 		public IFile getFile() {
 			return file;
@@ -124,14 +131,15 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 	private class TestLogListener implements ILogListener {
 		@Override
 		public void logging(IStatus status, String plugin) {
-			if (status.getSeverity() == IStatus.ERROR)
-				fail(status.toString());
+			if (status.getSeverity() == IStatus.ERROR) {
+				errorsInListener.add(status);
+			}
 		}
 	}
 
 	private class TestDiffNode extends AbstractCompareInput {
 
-		private CompareInputChangeNotifier notifier = new CompareInputChangeNotifier() {
+		private final CompareInputChangeNotifier notifier = new CompareInputChangeNotifier() {
 
 			private IResource getResource(ITypedElement el) {
 				if (el instanceof LocalResourceTypedElement) {
@@ -248,6 +256,7 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 		assertFalse(compareEditorInput.isDirty());
 	}
 
+	@Test
 	public void testDirtyFlagOnLocalResourceTypedElement()
 			throws CoreException, InvocationTargetException,
 			InterruptedException, IllegalArgumentException, SecurityException,
@@ -270,12 +279,10 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 		verifyDirtyStateChanges(compareEditorInput);
 
 		// check whether file was saved
-
-		assertTrue(compareContent(new ByteArrayInputStream(
-				(fileContents1 + appendFileContents).getBytes()),
-				file1.getContents()));
+		assertEquals(fileContents1 + appendFileContents, file1.readString());
 	}
 
+	@Test
 	public void testDirtyFlagOnCustomTypedElement() throws CoreException,
 			InvocationTargetException, InterruptedException,
 			IllegalArgumentException, SecurityException,
@@ -300,6 +307,7 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 		 */
 	}
 
+	@Test
 	public void testDirtyFlagOnLocalResourceTypedElementAndEmptyRight()
 			throws CoreException, InvocationTargetException,
 			InterruptedException, IllegalArgumentException, SecurityException,
@@ -322,12 +330,10 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 		verifyDirtyStateChanges(compareEditorInput);
 
 		// check whether file was saved
-
-		assertTrue(compareContent(new ByteArrayInputStream(
-				(fileContents1 + appendFileContents).getBytes()),
-				file1.getContents()));
+		assertEquals(fileContents1 + appendFileContents, file1.readString());
 	}
 
+	@Test
 	public void testDirtyFlagOnCustomTypedElementAndEmptyRight()
 			throws CoreException, InvocationTargetException,
 			InterruptedException, IllegalArgumentException, SecurityException,
@@ -355,7 +361,7 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 	private void verifyModifyAndSaveBothSidesOfCompareEditor(String extention)
 			throws InterruptedException, InvocationTargetException,
 			IllegalArgumentException, SecurityException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+			IllegalAccessException, NoSuchFieldException, CoreException, IOException {
 
 		// create files to compare
 		IFile file1 = project.getFile("CompareFile1." + extention);
@@ -403,46 +409,33 @@ public class SaveableCompareEditorInputTest extends TeamTest {
 				.closeEditor(editor, false);
 
 		// validate if both sides where saved
-		assertTrue(compareContent(new ByteArrayInputStream(
-				(fileContents1 + appendFileContents).getBytes()),
-				file1.getContents()));
-		assertTrue(compareContent(new ByteArrayInputStream(
-				(fileContents2 + appendFileContents).getBytes()),
-				file2.getContents()));
+		assertEquals(fileContents1 + appendFileContents, file1.readString());
+		assertEquals(fileContents2 + appendFileContents, file2.readString());
 	}
 
-	public void testModifyAndSaveBothSidesOfCompareEditorHtml()
-			throws IllegalArgumentException, SecurityException,
-			InterruptedException, InvocationTargetException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+	@Test
+	public void testModifyAndSaveBothSidesOfCompareEditorHtml() throws Exception {
 		verifyModifyAndSaveBothSidesOfCompareEditor("html");
 	}
 
-	public void testModifyAndSaveBothSidesOfCompareEditorTxt()
-			throws IllegalArgumentException, SecurityException,
-			InterruptedException, InvocationTargetException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+	@Test
+	public void testModifyAndSaveBothSidesOfCompareEditorTxt() throws Exception {
 		verifyModifyAndSaveBothSidesOfCompareEditor("txt");
 	}
 
-	public void testModifyAndSaveBothSidesOfCompareEditorJava()
-			throws IllegalArgumentException, SecurityException,
-			InterruptedException, InvocationTargetException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+	@Test
+	public void testModifyAndSaveBothSidesOfCompareEditorJava() throws Exception {
 		verifyModifyAndSaveBothSidesOfCompareEditor("java");
 	}
 
-	public void testModifyAndSaveBothSidesOfCompareEditorXml()
-			throws IllegalArgumentException, SecurityException,
-			InterruptedException, InvocationTargetException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+	@Test
+	public void testModifyAndSaveBothSidesOfCompareEditorXml() throws Exception {
 		verifyModifyAndSaveBothSidesOfCompareEditor("xml");
 	}
 
-	public void testModifyAndSaveBothSidesOfCompareEditorProperties()
-			throws IllegalArgumentException, SecurityException,
-			InterruptedException, InvocationTargetException,
-			IllegalAccessException, NoSuchFieldException, CoreException {
+	@Test
+	public void testModifyAndSaveBothSidesOfCompareEditorProperties() throws Exception {
 		verifyModifyAndSaveBothSidesOfCompareEditor("properties");
 	}
+
 }

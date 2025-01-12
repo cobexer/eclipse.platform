@@ -13,144 +13,143 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.refresh;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.removeFromWorkspace;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import junit.framework.AssertionFailedError;
-import org.eclipse.core.internal.resources.Workspace;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.InstanceScope;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.ResourceTestUtil;
 import org.eclipse.core.tests.resources.TestUtil;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests the IRefreshMonitor interface
  */
-public class RefreshProviderTest extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class RefreshProviderTest {
 
 	private boolean originalRefreshSetting;
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		TestRefreshProvider.reset();
+	@BeforeEach
+	public void setUp() {
 		//turn on autorefresh
 		IEclipsePreferences prefs = InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES);
 		originalRefreshSetting = prefs.getBoolean(ResourcesPlugin.PREF_AUTO_REFRESH, false);
 		prefs.putBoolean(ResourcesPlugin.PREF_AUTO_REFRESH, true);
+		ResourceTestUtil.waitForRefresh();
+		TestRefreshProvider.reset();
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
+	@AfterEach
+	public void tearDown() {
 		//turn off autorefresh
-		TestRefreshProvider.reset();
 		IEclipsePreferences prefs = InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES);
 		prefs.putBoolean(ResourcesPlugin.PREF_AUTO_REFRESH, originalRefreshSetting);
+		ResourceTestUtil.waitForRefresh();
+		TestRefreshProvider.reset();
 	}
 
 	/**
 	 * Test to ensure that a refresh provider is given the correct events when a linked
 	 * file is created and deleted.
 	 */
-	public void testLinkedFile() throws Exception {
-		IPath location = getRandomLocation();
+	@Test
+	public void testLinkedFile(@TempDir Path tempDirectory) throws Exception {
+		IPath location = IPath.fromPath(tempDirectory).append("test");
 		String name = "testUnmonitorLinkedResource";
-		try {
-			IProject project = getWorkspace().getRoot().getProject(name);
-			ensureExistsInWorkspace(project, true);
-			joinAutoRefreshJobs();
-			IFile link = project.getFile("Link");
-			//ensure we currently have just the project being monitored
-			TestRefreshProvider provider = TestRefreshProvider.getInstance();
-			assertEquals("1.0", 1, provider.getMonitoredResources().length);
-			link.createLink(location, IResource.ALLOW_MISSING_LOCAL, getMonitor());
-			joinAutoRefreshJobs();
-			assertEquals("1.1", 2, provider.getMonitoredResources().length);
-			link.delete(IResource.FORCE, getMonitor());
-			joinAutoRefreshJobs();
-			assertEquals("1.2", 1, provider.getMonitoredResources().length);
-			ensureDoesNotExistInWorkspace(project);
-			joinAutoRefreshJobs();
-			assertEquals("1.3", 0, provider.getMonitoredResources().length);
-			//check provider for other errors
-			AssertionFailedError[] failures = provider.getFailures();
-			if (failures.length > 0) {
-				fail("" + failures.length + " failures", failures[0]);
-			}
-		} catch (CoreException e) {
-			fail("1.99", e);
-		} finally {
-			//cleanup
-			Workspace.clear(location.toFile());
-			deleteProject(name);
-		}
+		IProject project = getWorkspace().getRoot().getProject(name);
+		createInWorkspace(project);
+		joinAutoRefreshJobs();
+		IFile link = project.getFile("Link");
+		// ensure we currently have just the project being monitored
+		TestRefreshProvider provider = TestRefreshProvider.getInstance();
+		assertThat(provider.getMonitoredResources()).hasSize(1);
+		link.createLink(location, IResource.ALLOW_MISSING_LOCAL, createTestMonitor());
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).hasSize(2);
+		link.delete(IResource.FORCE, createTestMonitor());
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).hasSize(1);
+		removeFromWorkspace(project);
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).isEmpty();
+		// check provider for other errors
+		AssertionFailedError[] failures = provider.getFailures();
+		assertThat(failures).isEmpty();
 	}
 
 	/**
 	 * Test to ensure that a refresh provider is given the correct events when a project
 	 * is closed or opened.
 	 */
+	@Test
 	public void testProjectCloseOpen() throws Exception {
 		String name = "testProjectCloseOpen";
 		IProject project = getWorkspace().getRoot().getProject(name);
-		try {
-			ensureExistsInWorkspace(project, true);
-			joinAutoRefreshJobs();
-			//ensure we currently have just the project being monitored
-			TestRefreshProvider provider = TestRefreshProvider.getInstance();
-			assertEquals("1.0", 1, provider.getMonitoredResources().length);
-			project.close(getMonitor());
-			joinAutoRefreshJobs();
-			assertEquals("1.1", 0, provider.getMonitoredResources().length);
-			project.open(getMonitor());
-			joinAutoRefreshJobs();
-			assertEquals("1.2", 1, provider.getMonitoredResources().length);
-			ensureDoesNotExistInWorkspace(project);
-			joinAutoRefreshJobs();
-			assertEquals("1.3", 0, provider.getMonitoredResources().length);
-			//check provider for other errors
-			AssertionFailedError[] failures = provider.getFailures();
-			if (failures.length > 0) {
-				fail("" + failures.length + " failures", failures[0]);
-			}
-		} catch (CoreException e) {
-			fail("1.99", e);
-		} finally {
-			deleteProject(name);
-		}
+		createInWorkspace(project);
+		joinAutoRefreshJobs();
+		// ensure we currently have just the project being monitored
+		TestRefreshProvider provider = TestRefreshProvider.getInstance();
+		assertThat(provider.getMonitoredResources()).hasSize(1);
+		project.close(createTestMonitor());
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).isEmpty();
+		project.open(createTestMonitor());
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).hasSize(1);
+		removeFromWorkspace(project);
+		joinAutoRefreshJobs();
+		assertThat(provider.getMonitoredResources()).isEmpty();
+		// check provider for other errors
+		AssertionFailedError[] failures = provider.getFailures();
+		assertThat(failures).isEmpty();
 	}
 
 	/**
 	 * Test to ensure that a refresh provider is given the correct events when a project
 	 * is closed or opened.
 	 */
-	public void testProjectCreateDelete() throws Exception {
+	@Test
+	public void testProjectCreateDelete(TestInfo testInfo) throws Exception {
 		String name = "testProjectCreateDelete";
 		final int maxRuns = 1000;
 		int i = 0;
 		Map<Integer, Throwable> fails = new HashMap<>();
-		try {
-			for (; i < maxRuns; i++) {
-				if (i % 50 == 0) {
-					TestUtil.waitForJobs(getName(), 5, 100);
-				}
-				try {
-					assertTrue(createProject(name).isAccessible());
-					assertFalse(deleteProject(name).exists());
-				} catch (CoreException e) {
-					fails.put(i, e);
-				}
+		for (; i < maxRuns; i++) {
+			if (i % 50 == 0) {
+				TestUtil.waitForJobs(testInfo.getDisplayName(), 5, 100);
 			}
-		} finally {
-			deleteProject(name);
+			try {
+				assertTrue(createProject(name).isAccessible());
+				assertFalse(deleteProject(name).exists());
+			} catch (CoreException e) {
+				fails.put(i, e);
+			}
 		}
-		if (!fails.isEmpty()) {
-			fail("Failed " + fails.size() + " times out of " + i, fails.values().iterator().next());
-		}
+		assertThat(fails).isEmpty();
 	}
 
 	private IProject createProject(String name) throws Exception {

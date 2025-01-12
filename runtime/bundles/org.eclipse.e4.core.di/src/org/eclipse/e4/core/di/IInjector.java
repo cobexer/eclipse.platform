@@ -14,11 +14,11 @@
  *******************************************************************************/
 package org.eclipse.e4.core.di;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import jakarta.inject.Scope;
+import jakarta.inject.Singleton;
 import java.lang.annotation.Annotation;
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-import javax.inject.Scope;
-import javax.inject.Singleton;
 import org.eclipse.e4.core.di.suppliers.PrimaryObjectSupplier;
 
 /**
@@ -30,7 +30,7 @@ import org.eclipse.e4.core.di.suppliers.PrimaryObjectSupplier;
  * synchronized with the context once it has been injected.
  * <p>
  * Matching of methods and fields to be injected is performed using the
- * annotations defined in packages javax.inject and
+ * annotations defined in packages jakarta.inject and
  * org.eclipse.e4.core.services.annotations.
  * </p>
  * <p>

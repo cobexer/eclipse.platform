@@ -39,7 +39,6 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.OperationCanceledException;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.dialogs.IDialogSettings;
@@ -97,8 +96,8 @@ public class InputPatchPage extends WizardPage {
 	private boolean fShowError= false;
 	private String fPatchSource;
 	private boolean fPatchRead= false;
-	private PatchWizard fPatchWizard;
-	private ActivationListener fActivationListener= new ActivationListener();
+	private final PatchWizard fPatchWizard;
+	private final ActivationListener fActivationListener= new ActivationListener();
 
 	// SWT widgets
 	private Button fUseClipboardButton;
@@ -126,6 +125,9 @@ public class InputPatchPage extends WizardPage {
 			case WORKSPACE:
 				fShowError= (!fTreeViewer.getSelection().isEmpty());
 				break;
+			default:
+				// CLIPBOARD
+				break;
 			}
 			updateWidgetEnablements();
 		}
@@ -142,7 +144,7 @@ public class InputPatchPage extends WizardPage {
 	 * @return org.eclipse.core.runtime.IPath
 	 */
 	protected IPath getPathFromText(Text textField) {
-		return (new Path(textField.getText())).makeAbsolute();
+		return (IPath.fromOSString(textField.getText())).makeAbsolute();
 	}
 
 	/* package */ String getPatchName() {
@@ -253,62 +255,7 @@ public class InputPatchPage extends WizardPage {
 
 		WorkspacePatcher patcher= ((PatchWizard) getWizard()).getPatcher();
 		// Create a reader for the input
-		Reader reader= null;
-		try {
-			int inputMethod= getInputMethod();
-			if (inputMethod == CLIPBOARD) {
-				Control c= getControl();
-				if (c != null) {
-					Clipboard clipboard= new Clipboard(c.getDisplay());
-					Object o= clipboard.getContents(TextTransfer.getInstance());
-					clipboard.dispose();
-					if (o instanceof String)
-						reader= new StringReader((String)o);
-				}
-				fPatchSource= PatchMessages.InputPatchPage_Clipboard_title;
-			} else if (inputMethod==FILE) {
-				String patchFilePath= getPatchFilePath();
-				if (patchFilePath != null) {
-					try {
-						reader= new FileReader(patchFilePath);
-					} catch (FileNotFoundException ex) {
-						MessageDialog.openError(null,
-							PatchMessages.InputPatchPage_PatchErrorDialog_title,
-							PatchMessages.InputPatchPage_PatchFileNotFound_message);
-					}
-				}
-				fPatchSource= PatchMessages.InputPatchPage_PatchFile_title;
-			} else if (inputMethod==URL) {
-				String patchFileURL = fPatchURLField.getText();
-				if (patchFileURL != null) {
-					try {
-						String contents = Utilities.getURLContents(new URL(
-								patchFileURL), getContainer());
-						if (contents != null)
-							reader = new StringReader(contents);
-					} catch (MalformedURLException | InvocationTargetException | OperationCanceledException | InterruptedException e) { // ignore
-					}
-				}
-				fPatchSource= PatchMessages.InputPatchPage_URL_title;
-			} else if (inputMethod==WORKSPACE) {
-				// Get the selected patch file (tree will only allow for one selection)
-				IResource[] resources= Utilities.getResources(fTreeViewer.getSelection());
-				IResource patchFile= resources[0];
-				if (patchFile != null) {
-					if (patchFile.getLocation() == null) {
-						MessageDialog.openError(null, PatchMessages.InputPatchPage_PatchErrorDialog_title, PatchMessages.InputPatchPage_PatchFileNotFound_message);
-					} else {
-						try {
-							reader = new FileReader(patchFile.getLocation().toFile());
-						} catch (FileNotFoundException ex) {
-							MessageDialog.openError(null, PatchMessages.InputPatchPage_PatchErrorDialog_title,
-									PatchMessages.InputPatchPage_PatchFileNotFound_message);
-						}
-					}
-				}
-				fPatchSource= PatchMessages.InputPatchPage_WorkspacePatch_title;
-			}
-
+		try (Reader reader = createReader()) {
 			// parse the input
 			if (reader != null) {
 				try {
@@ -321,15 +268,66 @@ public class InputPatchPage extends WizardPage {
 					setPageComplete(false);
 				}
 			}
-		} finally {
-			if (reader != null) {
+		} catch (IOException closeException) {
+			// silently ignored
+		}
+	}
+
+	private Reader createReader() {
+		int inputMethod = getInputMethod();
+		if (inputMethod == CLIPBOARD) {
+			Control c = getControl();
+			if (c != null) {
+				Clipboard clipboard = new Clipboard(c.getDisplay());
+				Object o = clipboard.getContents(TextTransfer.getInstance());
+				clipboard.dispose();
+				if (o instanceof String)
+					return new StringReader((String) o);
+			}
+			fPatchSource = PatchMessages.InputPatchPage_Clipboard_title;
+		} else if (inputMethod == FILE) {
+			String patchFilePath = getPatchFilePath();
+			if (patchFilePath != null) {
 				try {
-					reader.close();
-				} catch (IOException x) {
-					// silently ignored
+					return new FileReader(patchFilePath);
+				} catch (FileNotFoundException ex) {
+					MessageDialog.openError(null, PatchMessages.InputPatchPage_PatchErrorDialog_title,
+							PatchMessages.InputPatchPage_PatchFileNotFound_message);
 				}
 			}
+			fPatchSource = PatchMessages.InputPatchPage_PatchFile_title;
+		} else if (inputMethod == URL) {
+			String patchFileURL = fPatchURLField.getText();
+			if (patchFileURL != null) {
+				try {
+					String contents = Utilities.getURLContents(new URL(patchFileURL), getContainer());
+					if (contents != null)
+						return new StringReader(contents);
+				} catch (MalformedURLException | InvocationTargetException | OperationCanceledException
+						| InterruptedException e) { // ignore
+				}
+			}
+			fPatchSource = PatchMessages.InputPatchPage_URL_title;
+		} else if (inputMethod == WORKSPACE) {
+			// Get the selected patch file (tree will only allow for one selection)
+			IResource[] resources = Utilities.getResources(fTreeViewer.getSelection());
+			IResource patchFile = resources[0];
+			if (patchFile != null) {
+				if (patchFile.getLocation() == null) {
+					MessageDialog.openError(null, PatchMessages.InputPatchPage_PatchErrorDialog_title,
+							PatchMessages.InputPatchPage_PatchFileNotFound_message);
+				} else {
+					try {
+						return new FileReader(patchFile.getLocation().toFile());
+					} catch (FileNotFoundException ex) {
+						MessageDialog.openError(null, PatchMessages.InputPatchPage_PatchErrorDialog_title,
+								PatchMessages.InputPatchPage_PatchFileNotFound_message);
+					}
+				}
+			}
+			fPatchSource = PatchMessages.InputPatchPage_WorkspacePatch_title;
 		}
+		return null;
 	}
 
 	@Override
@@ -633,7 +631,7 @@ public class InputPatchPage extends WizardPage {
 			return;
 
 		patchFilePath= dialog.getFileName();
-		IPath filterPath= new Path(dialog.getFilterPath());
+		IPath filterPath= IPath.fromOSString(dialog.getFilterPath());
 		IPath path= filterPath.append(patchFilePath).makeAbsolute();
 		patchFilePath= path.toOSString();
 		//fDialogSettings.put(IUIConstants.DIALOGSTORE_LASTEXTJAR, filterPath.toOSString());
@@ -761,7 +759,7 @@ public class InputPatchPage extends WizardPage {
 			if (workspaceSetting != null && workspaceSetting.length() > 0) {
 				// See if this resource still exists in the workspace
 				try {
-					IPath path= new Path(workspaceSetting);
+					IPath path= IPath.fromOSString(workspaceSetting);
 					IFile targetFile= ResourcesPlugin.getWorkspace().getRoot().getFile(path);
 					if (fTreeViewer != null && targetFile.exists()){
 						fTreeViewer.expandToLevel(targetFile, 0);
@@ -870,36 +868,29 @@ public class InputPatchPage extends WizardPage {
 			}
 		}
 		// check out clipboard contents
-		Reader reader = null;
 		Control c = getControl();
 		if (c != null) {
 			Clipboard clipboard= new Clipboard(c.getDisplay());
 			Object o= clipboard.getContents(TextTransfer.getInstance());
 			clipboard.dispose();
-			try {
-				if (o instanceof String) {
-					reader= new StringReader((String) o);
+			if (o instanceof String) {
+				String s = (String) o;
+				try (Reader reader = new StringReader(s)) {
 					if (isPatchFile(reader)) {
 						setInputButtonState(CLIPBOARD);
 						return true;
 					}
 					// maybe it's an URL
 					try {
-						new URL((String)o);
+						new URL(s);
 						setInputButtonState(URL);
-						fPatchURLField.setText((String)o);
+						fPatchURLField.setText(s);
 						return true;
 					} catch (MalformedURLException e) {
 						// ignore
 					}
-				}
-			} finally {
-				if (reader != null) {
-					try {
-						reader.close();
-					} catch (IOException x) {
-						// silently ignored
-					}
+				} catch (IOException closeException) {
+					// silently ignored
 				}
 			}
 		}
@@ -958,6 +949,8 @@ public class InputPatchPage extends WizardPage {
 			fUseURLButton.setSelection(false);
 			fUseWorkspaceButton.setSelection(true);
 			break;
+		default:
+			throw new IllegalArgumentException(Integer.toString(state));
 		}
 
 		setEnablePatchFile(state == FILE);

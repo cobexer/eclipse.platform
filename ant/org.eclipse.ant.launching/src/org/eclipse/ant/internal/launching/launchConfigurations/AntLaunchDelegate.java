@@ -26,7 +26,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.tools.ant.ProjectHelper;
 import org.eclipse.ant.core.AntCorePlugin;
@@ -51,7 +52,6 @@ import org.eclipse.core.runtime.FileLocator;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
@@ -122,7 +122,7 @@ public class AntLaunchDelegate extends LaunchConfigurationDelegate {
 		String path = configuration.getAttribute(IJavaLaunchConfigurationConstants.ATTR_JRE_CONTAINER_PATH, new String("")); //$NON-NLS-1$
 		String vmver = null;
 		if (!path.isEmpty()) {
-			IPath jrePath = Path.fromPortableString(path);
+			IPath jrePath = IPath.fromPortableString(path);
 			IVMInstall vm = JavaRuntime.getVMInstall(jrePath);
 			if (vm instanceof AbstractVMInstall) {
 				AbstractVMInstall install = (AbstractVMInstall) vm;
@@ -603,23 +603,27 @@ public class AntLaunchDelegate extends LaunchConfigurationDelegate {
 				refresher.startBackgroundRefresh();
 			}
 		} else {
-			final AtomicBoolean terminated = new AtomicBoolean(false);
+			final CountDownLatch terminated = new CountDownLatch(1);
 			IDebugEventSetListener listener = events -> {
 				for (DebugEvent event : events) {
 					for (IProcess process : processes) {
 						if (event.getSource() == process && event.getKind() == DebugEvent.TERMINATE) {
-							terminated.set(true);
-							break;
+							terminated.countDown();
+							return;
 						}
 					}
 				}
 			};
 			DebugPlugin.getDefault().addDebugEventListener(listener);
-			terminated.compareAndSet(false, launch.isTerminated());
+			if (launch.isTerminated()) {
+				terminated.countDown();
+			}
 			monitor.subTask(AntLaunchConfigurationMessages.AntLaunchDelegate_28);
-			while (!monitor.isCanceled() && !terminated.get()) {
+			while (!monitor.isCanceled()) {
 				try {
-					Thread.sleep(50);
+					if (terminated.await(50, TimeUnit.MILLISECONDS)) {
+						break;
+					}
 				}
 				catch (InterruptedException e) {
 					// do nothing
@@ -745,7 +749,7 @@ public class AntLaunchDelegate extends LaunchConfigurationDelegate {
 			try {
 				URL url = FileLocator.toFileURL(fragBundle.getEntry("/")); //$NON-NLS-1$
 				try {
-					IPath path = new Path(URIUtil.toURL(URIUtil.toURI(url)).getPath());
+					IPath path = IPath.fromOSString(URIUtil.toURL(URIUtil.toURI(url)).getPath());
 					path = path.removeTrailingSeparator();
 					fgSWTLibraryLocation = path.toOSString();
 				}

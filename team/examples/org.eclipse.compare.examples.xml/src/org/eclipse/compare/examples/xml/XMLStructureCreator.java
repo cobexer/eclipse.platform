@@ -13,10 +13,8 @@
  *******************************************************************************/
 package org.eclipse.compare.examples.xml;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
 
@@ -26,7 +24,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import javax.xml.parsers.SAXParser;
-import javax.xml.parsers.SAXParserFactory;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
@@ -85,7 +82,7 @@ public class XMLStructureCreator implements IStructureCreator {
 	private XMLNode fcurrentParent;
 	private String fsignature;
 	private Document fdoc;
-	private boolean ignoreBodies= false;
+	private final boolean ignoreBodies= false;
 	private HashMap fIdMapsInternal;
 	private HashMap fIdMaps;
 	private HashMap fIdExtensionToName;
@@ -596,26 +593,8 @@ public class XMLStructureCreator implements IStructureCreator {
 			XMLHandler handler= new XMLHandler();
 
 			try {
-				//            	/* original xerces code
-				//            	SAXParser parser = (SAXParser)Class.forName(parserName).newInstance();
-				//            	*/
-				//				XMLReader parser = XMLReaderFactory.createXMLReader(parserName);
-				//				
-				//	            parser.setFeature( "http://xml.org/sax/features/validation", setValidation); //$NON-NLS-1$
-				//    	        parser.setFeature( "http://xml.org/sax/features/namespaces", setNameSpaces ); //$NON-NLS-1$
-				//    	        /*
-				//    	        parser.setFeature( "http://apache.org/xml/features/nonvalidating/load-external-dtd", false); //$NON-NLS-1$
-				//        	    parser.setFeature( "http://apache.org/xml/features/validation/schema", setSchemaSupport ); //$NON-NLS-1$
-				//	            parser.setFeature( "http://apache.org/xml/features/validation/schema-full-checking", setSchemaFullSupport); //$NON-NLS-1$
-				//	           	*/
-				//	            parser.setContentHandler(handler);
-				//	            parser.setErrorHandler(handler);
-				//	            
-				//	            parser.parse(new InputSource(sca.getContents()));
-
-				SAXParserFactory factory= SAXParserFactory.newInstance();
-				factory.setNamespaceAware(true);
-				SAXParser parser= factory.newSAXParser();
+				@SuppressWarnings("restriction")
+				SAXParser parser = org.eclipse.core.internal.runtime.XmlProcessorFactory.createSAXParserNoExternal(true);
 				parser.parse(new InputSource(new StringReader(contents)), handler);
 
 				if (XMLStructureCreator.DEBUG_MODE)
@@ -624,7 +603,6 @@ public class XMLStructureCreator implements IStructureCreator {
 				XMLPlugin.log(e);
 				return null;
 			} catch (Exception e) {
-				//				MessageDialog.openError(XMLPlugin.getActiveWorkbenchShell(),"Error in XML parser","An error occured in the XML parser.\nNo structured compare can be shown");
 				XMLPlugin.log(e);
 				return null;
 			}
@@ -688,45 +666,20 @@ public class XMLStructureCreator implements IStructureCreator {
 	}
 
 	static String readString(IStreamContentAccessor sa) throws CoreException {
-		InputStream is= sa.getContents();
 		String encoding= null;
 		if (sa instanceof IEncodedStreamContentAccessor)
 			encoding= ((IEncodedStreamContentAccessor) sa).getCharset();
 		if (encoding == null)
 			encoding= "UTF-8"; //$NON-NLS-1$
-		return readString(is, encoding);
-	}
-
-	/*
-	 * Returns null if an error occurred.
-	 */
-	private static String readString(InputStream is, String encoding) {
-		if (is == null)
-			return null;
-		BufferedReader reader= null;
-		try {
-			StringBuilder buffer= new StringBuilder();
-			char[] part= new char[2048];
-			int read= 0;
-			reader= new BufferedReader(new InputStreamReader(is, encoding));
-
-			while ((read= reader.read(part)) != -1)
-				buffer.append(part, 0, read);
-
-			return buffer.toString();
-
-		} catch (IOException ex) {
-			// NeedWork
-		} finally {
-			if (reader != null) {
-				try {
-					reader.close();
-				} catch (IOException ex) {
-					// silently ignored
-				}
+		try (InputStream is= sa.getContents()) {
+			if (is == null) {
+				return null;
 			}
+			return new String(is.readAllBytes(), encoding);
+		} catch (IOException e) {
+			// ignored
+			return null;
 		}
-		return null;
 	}
 
 	/* Returns a sorted list of attributes.

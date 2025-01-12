@@ -13,30 +13,42 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.ui.debug;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import org.eclipse.ant.internal.launching.debug.model.AntProperty;
 import org.eclipse.ant.internal.launching.debug.model.AntStackFrame;
 import org.eclipse.ant.internal.launching.debug.model.AntThread;
 import org.eclipse.ant.internal.launching.debug.model.AntValue;
 import org.eclipse.ant.launching.IAntLaunchConstants;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.debug.core.model.ILineBreakpoint;
 import org.eclipse.debug.core.model.IVariable;
+import org.junit.Test;
+import org.osgi.framework.Version;
 
 public class PropertyTests extends AbstractAntDebugTest {
 
-	private static final String ANT_VERSION = "Apache Ant(TM) version 1.10.12"; //$NON-NLS-1$
+	private static final String ANT_VERSION;
 
-	public PropertyTests(String name) {
-		super(name);
+	static {
+		Version antVersion = Platform.getBundle("org.apache.ant").getVersion(); //$NON-NLS-1$
+		ANT_VERSION = "Apache Ant(TM) version " + antVersion.getMajor() + '.' + antVersion.getMinor() + '.' //$NON-NLS-1$
+				+ antVersion.getMicro();
 	}
 
+	@Test
 	public void testSystemProperties() throws Exception {
 		systemProperties(false);
 	}
 
+	@Test
 	public void testSystemPropertiesSepVM() throws Exception {
 		systemProperties(true);
 	}
@@ -56,7 +68,7 @@ public class PropertyTests extends AbstractAntDebugTest {
 
 			AntStackFrame frame = (AntStackFrame) thread.getTopStackFrame();
 			IVariable[] vars = frame.getVariables();
-			assertTrue("Should be a bunch of properties", 0 < vars.length); //$NON-NLS-1$
+			assertThat(vars).hasSizeGreaterThan(0);
 			AntProperty property = frame.findProperty("ant.library.dir"); //$NON-NLS-1$
 			assertNotNull(property);
 
@@ -67,10 +79,12 @@ public class PropertyTests extends AbstractAntDebugTest {
 		}
 	}
 
+	@Test
 	public void testUserProperties() throws Exception {
 		userProperties(false);
 	}
 
+	@Test
 	public void testUserPropertiesSepVM() throws Exception {
 		userProperties(true);
 	}
@@ -90,7 +104,7 @@ public class PropertyTests extends AbstractAntDebugTest {
 
 			AntStackFrame frame = (AntStackFrame) thread.getTopStackFrame();
 			IVariable[] vars = frame.getVariables();
-			assertTrue("Should be a bunch of properties", 0 < vars.length); //$NON-NLS-1$
+			assertThat(vars).hasSizeGreaterThan(0);
 			AntProperty property = frame.findProperty("ant.home"); //$NON-NLS-1$
 			assertNotNull(property);
 
@@ -102,6 +116,7 @@ public class PropertyTests extends AbstractAntDebugTest {
 		}
 	}
 
+	@Test
 	public void testRuntimeProperties() throws Exception {
 		runtimeProperties(false);
 	}
@@ -121,7 +136,7 @@ public class PropertyTests extends AbstractAntDebugTest {
 
 			AntStackFrame frame = (AntStackFrame) thread.getTopStackFrame();
 			IVariable[] vars = frame.getVariables();
-			assertTrue("Should be a bunch of properties", 0 < vars.length); //$NON-NLS-1$
+			assertThat(vars).hasSizeGreaterThan(0);
 			AntProperty property = frame.findProperty("ant.home"); //$NON-NLS-1$
 			assertNotNull(property);
 

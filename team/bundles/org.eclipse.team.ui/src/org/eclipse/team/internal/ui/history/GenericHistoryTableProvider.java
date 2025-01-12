@@ -137,10 +137,10 @@ public class GenericHistoryTableProvider {
 	 */
 	class HistoryComparator extends ViewerComparator {
 		private boolean reversed = false;
-		private int columnNumber;
+		private final int columnNumber;
 
 		// column headings:	"Revision" "Tags" "Date" "Author" "Comment"
-		private int[][] SORT_ORDERS_BY_COLUMN = {
+		private final int[][] SORT_ORDERS_BY_COLUMN = {
 			{COL_REVISIONID, COL_DATE, COL_AUTHOR, COL_COMMENT},	/* revision */
 			{COL_REVISIONID, COL_DATE, COL_AUTHOR, COL_COMMENT},	/* tags */
 			{COL_DATE, COL_REVISIONID, COL_AUTHOR, COL_COMMENT},	/* date */
@@ -234,7 +234,6 @@ public class GenericHistoryTableProvider {
 	 * Create a TableViewer that can be used to display a list of IFileRevision instances.
 	 * This method provides the labels and sorter but does not provide a content provider
 	 *
-	 * @param parent
 	 * @return TableViewer
 	 */
 	public TableViewer createTable(Composite parent) {

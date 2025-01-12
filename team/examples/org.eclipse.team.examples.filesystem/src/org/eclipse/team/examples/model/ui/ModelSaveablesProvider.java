@@ -26,7 +26,7 @@ import org.eclipse.ui.navigator.SaveablesProvider;
  */
 public class ModelSaveablesProvider extends SaveablesProvider {
 
-	private List<Saveable> saveables = new ArrayList<>();
+	private final List<Saveable> saveables = new ArrayList<>();
 
 	@Override
 	public Object[] getElements(Saveable saveable) {
@@ -39,7 +39,7 @@ public class ModelSaveablesProvider extends SaveablesProvider {
 
 	@Override
 	public Saveable getSaveable(Object element) {
-		for (Object element2 : saveables) {
+		for (Saveable element2 : saveables) {
 			ModelSaveable saveable = (ModelSaveable) element2;
 			if (saveable.getModelObject().equals(element))
 				return saveable;

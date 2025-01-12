@@ -26,8 +26,8 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.FileLocator;
 import org.eclipse.core.runtime.IConfigurationElement;
 import org.eclipse.core.runtime.IExtension;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.preferences.InstanceScope;
@@ -83,11 +83,11 @@ public class TeamUIPlugin extends AbstractUIPlugin {
 
 	private static List<IPropertyChangeListener> propertyChangeListeners = new ArrayList<>(5);
 
-	private Hashtable<String, ImageDescriptor> imageDescriptors = new Hashtable<>(20);
+	private final Hashtable<String, ImageDescriptor> imageDescriptors = new Hashtable<>(20);
 
 	private WorkspaceTeamStateProvider provider;
 
-	private Map<String, TeamStateProvider> decoratedStateProviders = new HashMap<>();
+	private final Map<String, TeamStateProvider> decoratedStateProviders = new HashMap<>();
 
 	// manages synchronize participants
 	private SynchronizeManager synchronizeManager;
@@ -117,7 +117,6 @@ public class TeamUIPlugin extends AbstractUIPlugin {
 	 * @param element the config element defining the extension
 	 * @param classAttribute the name of the attribute carrying the class
 	 * @return the extension object
-	 * @throws CoreException
 	 */
 	public static Object createExtension(final IConfigurationElement element, final String classAttribute) throws CoreException {
 		// If plugin has been loaded create extension.
@@ -207,7 +206,6 @@ public class TeamUIPlugin extends AbstractUIPlugin {
 	/**
 	 * Convenience method for logging a TeamException in such a way that the
 	 * stacktrace is logged as well.
-	 * @param e
 	 */
 	public static void log(CoreException e) {
 		IStatus status = e.getStatus();
@@ -334,7 +332,7 @@ public class TeamUIPlugin extends AbstractUIPlugin {
 	 * @return the image
 	 */
 	public static ImageDescriptor getImageDescriptorFromExtension(IExtension extension, String subdirectoryAndFilename) {
-		URL iconURL = FileLocator.find(Platform.getBundle(extension.getContributor().getName()), new Path(subdirectoryAndFilename), null);
+		URL iconURL = FileLocator.find(Platform.getBundle(extension.getContributor().getName()), IPath.fromOSString(subdirectoryAndFilename), null);
 		if (iconURL != null) {
 			return ImageDescriptor.createFromURL(iconURL);
 		}
@@ -422,7 +420,7 @@ public class TeamUIPlugin extends AbstractUIPlugin {
 	}
 
 	private URL getImageUrl(String relative) {
-		return FileLocator.find(Platform.getBundle(PLUGIN_ID), new Path(ICON_PATH + relative), null);
+		return FileLocator.find(Platform.getBundle(PLUGIN_ID), IPath.fromOSString(ICON_PATH + relative), null);
 	}
 
 	/**

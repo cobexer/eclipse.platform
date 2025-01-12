@@ -14,11 +14,22 @@
 
 package org.eclipse.core.tests.resources.regression;
 
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.ICommand;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.core.tests.resources.ResourceTest;
-import org.junit.Test;
+import org.eclipse.core.tests.internal.builders.SortBuilder;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests an error that occurs when a thread tries to read the workspace
@@ -28,7 +39,9 @@ import org.junit.Test;
  * malformed state.  The fix was to synchronize the routine that collapses
  * unused trees in ElementTree.
  */
-public class Bug_134364 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_134364 {
+
 	/**
 	 * Creates a project with a builder attached
 	 */
@@ -37,7 +50,7 @@ public class Bug_134364 extends ResourceTest {
 		IProject other = workspace.getRoot().getProject("Other");
 		IProjectDescription desc = workspace.newProjectDescription(other.getName());
 		ICommand command = desc.newCommand();
-		command.setBuilderName("org.eclipse.core.tests.resources.sortbuilder");
+		command.setBuilderName(SortBuilder.BUILDER_NAME);
 		desc.setBuildSpec(new ICommand[] {command});
 		other.create(desc, null);
 		other.open(null);
@@ -102,4 +115,5 @@ public class Bug_134364 extends ResourceTest {
 			throw new AssertionError("1.0", failure[0]);
 		}
 	}
+
 }

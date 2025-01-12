@@ -79,6 +79,14 @@ public class CompareConfiguration {
 	 */
 	public static final String MIRRORED = "MIRRORED"; //$NON-NLS-1$
 
+	/**
+	 * (Optional) id of the common content type for compare input detected by the
+	 * compare editor
+	 *
+	 * @since 3.11
+	 */
+	public static final String CONTENT_TYPE = "CONTENT_TYPE"; //$NON-NLS-1$
+
 	private static ImageDescriptor[] fgImages= new ImageDescriptor[32];
 
 	static {
@@ -115,9 +123,9 @@ public class CompareConfiguration {
 		fgImages[16 + Differencer.CONFLICTING + Differencer.CHANGE]= CompareUIPlugin.getImageDescriptor("ovr16/confchg_ov.png"); //$NON-NLS-1$
 	}
 
-	private IPreferenceStore fPreferenceStore;
-	private ListenerList<IPropertyChangeListener> fListeners= new ListenerList<>();
-	private HashMap<String, Object> fProperties= new HashMap<>();
+	private final IPreferenceStore fPreferenceStore;
+	private final ListenerList<IPropertyChangeListener> fListeners= new ListenerList<>();
+	private final HashMap<String, Object> fProperties= new HashMap<>();
 	private boolean fLeftEditable= true;
 	private boolean fRightEditable= true;
 	private String fAncestorLabel;
@@ -127,13 +135,13 @@ public class CompareConfiguration {
 	private Image fRightImage;
 	private Image fLeftImage;
 	private ICompareContainer fContainer;
-	private DefaultLabelProvider labelProvider = new DefaultLabelProvider();
+	private final DefaultLabelProvider labelProvider = new DefaultLabelProvider();
 	private boolean fDisposed;
 	private LocalResourceManager fResourceManager;
-	private Set<Integer> fIgnoredChanges = new HashSet<>(6);
+	private final Set<Integer> fIgnoredChanges = new HashSet<>(6);
 
 	private class DefaultLabelProvider extends LabelProvider implements ICompareInputLabelProvider, ILabelProviderListener {
-		private Map<ICompareInput, ICompareInputLabelProvider> labelProviders = new HashMap<>();
+		private final Map<ICompareInput, ICompareInputLabelProvider> labelProviders = new HashMap<>();
 		private ICompareInputLabelProvider defaultLabelProvider;
 
 		@Override
@@ -341,7 +349,7 @@ public class CompareConfiguration {
 			return null;
 		}
 		ResourceManager rm = getResourceManager();
-		return rm.createImage(id);
+		return rm.create(id);
 	}
 
 	private synchronized ResourceManager getResourceManager() {
@@ -369,7 +377,7 @@ public class CompareConfiguration {
 			return null;
 		ImageDescriptor id = new DiffImageDescriptor(base, getImageDescriptor(kind), ICompareUIConstants.COMPARE_IMAGE_WIDTH, false);
 		ResourceManager rm = getResourceManager();
-		return rm.createImage(id);
+		return rm.create(id);
 	}
 
 	/**

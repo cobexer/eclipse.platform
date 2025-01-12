@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2005, 2015 IBM Corporation and others.
+ * Copyright (c) 2005, 2024 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -14,11 +14,23 @@
  *******************************************************************************/
 package org.eclipse.core.filesystem.provider;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
-import org.eclipse.core.filesystem.*;
-import org.eclipse.core.internal.filesystem.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileInfo;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.IFileSystem;
+import org.eclipse.core.internal.filesystem.FileCache;
+import org.eclipse.core.internal.filesystem.Messages;
+import org.eclipse.core.internal.filesystem.Policy;
+import org.eclipse.core.internal.filesystem.local.LocalFile;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.PlatformObject;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -42,48 +54,6 @@ public abstract class FileStore extends PlatformObject implements IFileStore {
 	 * that return String[] to avoid creating garbage objects.
 	 */
 	protected static final String[] EMPTY_STRING_ARRAY = {};
-
-	/**
-	 * Transfers the contents of an input stream to an output stream, using a large
-	 * buffer.
-	 *
-	 * @param source The input stream to transfer
-	 * @param destination The destination stream of the transfer
-	 * @param length the size of the file or -1 if not known
-	 * @param path A path representing the data being transferred for use in error
-	 * messages.
-	 * @param monitor A progress monitor
-	 * @throws CoreException
-	 */
-	private static final void transferStreams(InputStream source, OutputStream destination, long length, String path, IProgressMonitor monitor) throws CoreException {
-		byte[] buffer = new byte[8192];
-		SubMonitor subMonitor = SubMonitor.convert(monitor, length >= 0 ? 1 + (int) (length / buffer.length) : 1000);
-		try {
-			while (true) {
-				int bytesRead = -1;
-				try {
-					bytesRead = source.read(buffer);
-				} catch (IOException e) {
-					String msg = NLS.bind(Messages.failedReadDuringWrite, path);
-					Policy.error(EFS.ERROR_READ, msg, e);
-				}
-				try {
-					if (bytesRead == -1) {
-						destination.close();
-						break;
-					}
-					destination.write(buffer, 0, bytesRead);
-				} catch (IOException e) {
-					String msg = NLS.bind(Messages.couldNotWrite, path);
-					Policy.error(EFS.ERROR_WRITE, msg, e);
-				}
-				subMonitor.worked(1);
-			}
-		} finally {
-			Policy.safeClose(source);
-			Policy.safeClose(destination);
-		}
-	}
 
 	/**
 	 * The default implementation of {@link IFileStore#childInfos(int, IProgressMonitor)}.
@@ -160,7 +130,7 @@ public abstract class FileStore extends PlatformObject implements IFileStore {
 		// create directory
 		destination.mkdir(EFS.NONE, subMonitor.newChild(1));
 		// copy attributes
-		transferAttributes(sourceInfo, destination);
+		LocalFile.transferAttributes(sourceInfo, destination);
 
 		if (children == null)
 			return;
@@ -189,21 +159,22 @@ public abstract class FileStore extends PlatformObject implements IFileStore {
 	 * </ul>
 	 */
 	protected void copyFile(IFileInfo sourceInfo, IFileStore destination, int options, IProgressMonitor monitor) throws CoreException {
-		if ((options & EFS.OVERWRITE) == 0 && destination.fetchInfo().exists())
+		if ((options & EFS.OVERWRITE) == 0 && destination.fetchInfo().exists()) {
 			Policy.error(EFS.ERROR_EXISTS, NLS.bind(Messages.fileExists, destination));
-		long length = sourceInfo.getLength();
+		}
 		String sourcePath = toString();
 		SubMonitor subMonitor = SubMonitor.convert(monitor, NLS.bind(Messages.copying, sourcePath), 100);
-		InputStream in = null;
-		OutputStream out = null;
 		try {
-			in = openInputStream(EFS.NONE, subMonitor.newChild(1));
-			out = destination.openOutputStream(EFS.NONE, subMonitor.newChild(1));
-			transferStreams(in, out, length, sourcePath, subMonitor.newChild(98));
-			transferAttributes(sourceInfo, destination);
+			try (InputStream in = openInputStream(EFS.NONE, subMonitor.newChild(1)); //
+					OutputStream out = destination.openOutputStream(EFS.NONE, subMonitor.newChild(1));) {
+				in.transferTo(out);
+				subMonitor.worked(93);
+			} // Close the streams to ensure the target file exists before transferring attributes
+			LocalFile.transferAttributes(sourceInfo, destination);
+			subMonitor.worked(5);
+		} catch (IOException e) {
+			Policy.error(EFS.ERROR_WRITE, NLS.bind(Messages.failedCopy, sourcePath), e);
 		} catch (CoreException e) {
-			Policy.safeClose(in);
-			Policy.safeClose(out);
 			//if we failed to write, try to cleanup the half written file
 			if (!destination.fetchInfo(0, null).exists())
 				destination.delete(EFS.NONE, null);
@@ -461,8 +432,4 @@ public abstract class FileStore extends PlatformObject implements IFileStore {
 	@Override
 	public abstract URI toURI();
 
-	private void transferAttributes(IFileInfo sourceInfo, IFileStore destination) throws CoreException {
-		int options = EFS.SET_ATTRIBUTES | EFS.SET_LAST_MODIFIED;
-		destination.putInfo(sourceInfo, options, null);
-	}
 }

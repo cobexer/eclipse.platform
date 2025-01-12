@@ -15,12 +15,20 @@ package org.eclipse.compare.internal.core.patch;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.text.*;
-import java.util.*;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.StringTokenizer;
 import java.util.regex.Pattern;
 
 import org.eclipse.compare.patch.IFilePatch2;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IPath;
 
 public class PatchReader {
 	private static final boolean DEBUG= false;
@@ -34,13 +42,6 @@ public class PatchReader {
 	//	private static final int ED= 1;
 	//	private static final int NORMAL= 2;
 	//	private static final int UNIFIED= 3;
-
-	// we recognize the following date/time formats
-	private DateFormat[] fDateFormats= new DateFormat[] {
-		new SimpleDateFormat("EEE MMM dd kk:mm:ss yyyy"), //$NON-NLS-1$
-		new SimpleDateFormat("yyyy/MM/dd kk:mm:ss"), //$NON-NLS-1$
-		new SimpleDateFormat("EEE MMM dd kk:mm:ss yyyy", Locale.US) //$NON-NLS-1$
-	};
 
 	private boolean fIsWorkspacePatch;
 	private boolean fIsGitPatch;
@@ -61,18 +62,6 @@ public class PatchReader {
 	 */
 	public PatchReader() {
 		// nothing here
-	}
-
-	/**
-	 * Create a patch reader for the given date formats.
-	 *
-	 * @param dateFormats
-	 *            Array of <code>DateFormat</code>s to be used when
-	 *            extracting dates from the patch.
-	 */
-	public PatchReader(DateFormat[] dateFormats) {
-		this();
-		this.fDateFormats = dateFormats;
 	}
 
 	public void parse(BufferedReader reader) throws IOException {
@@ -188,13 +177,13 @@ public class PatchReader {
 				diffArgs= line.substring(4).trim();
 			} else if (line.startsWith("--- ")) { //$NON-NLS-1$
 				line= readUnifiedDiff(diffs, lr, line, diffArgs, fileName);
-				if (!headerLines.isEmpty())
+				if (!headerLines.isEmpty() && !diffs.isEmpty())
 					setHeader(diffs.get(diffs.size() - 1), headerLines);
 				diffArgs= fileName= null;
 				reread= true;
 			} else if (line.startsWith("*** ")) { //$NON-NLS-1$
 				line= readContextDiff(diffs, lr, line, diffArgs, fileName);
-				if (!headerLines.isEmpty())
+				if (!headerLines.isEmpty() && !diffs.isEmpty())
 					setHeader(diffs.get(diffs.size() - 1), headerLines);
 				diffArgs= fileName= null;
 				reread= true;
@@ -589,12 +578,18 @@ public class PatchReader {
 	private long extractDate(String[] args, int n) {
 		if (n < args.length) {
 			String line= args[n];
-			for (DateFormat dateFormat : this.fDateFormats) {
+			// we recognize the following date/time formats
+			DateFormat[] fDateFormats= new DateFormat[] {
+				new SimpleDateFormat("EEE MMM dd kk:mm:ss yyyy"), //$NON-NLS-1$
+				new SimpleDateFormat("yyyy/MM/dd kk:mm:ss"), //$NON-NLS-1$
+				new SimpleDateFormat("EEE MMM dd kk:mm:ss yyyy", Locale.US) //$NON-NLS-1$
+			};
+			for (DateFormat dateFormat : fDateFormats) {
 				dateFormat.setLenient(true);
 				try {
 					Date date = dateFormat.parse(line);
 					return date.getTime();
-				} catch (ParseException ex) {
+				} catch (@SuppressWarnings("unused") ParseException ex) {
 					// silently ignored
 				}
 			}
@@ -618,7 +613,7 @@ public class PatchReader {
 				if (DEBUG) System.out.println("path mismatch: " + path2); //$NON-NLS-1$
 				path= path2;
 			}
-			return new Path(path);
+			return IPath.fromOSString(path);
 		}
 		return null;
 	}

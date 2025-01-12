@@ -44,7 +44,7 @@ import org.eclipse.team.internal.core.Policy;
 public abstract class SubscriberEventHandler extends BackgroundEventHandler {
 
 	// Changes accumulated by the event handler
-	private List<Event> resultCache = new ArrayList<>();
+	private final List<Event> resultCache = new ArrayList<>();
 
 	private boolean started = false;
 	private boolean initializing = true;
@@ -54,9 +54,9 @@ public abstract class SubscriberEventHandler extends BackgroundEventHandler {
 	private int ticks;
 
 	private final Subscriber subscriber;
-	private ISynchronizationScope scope;
+	private final ISynchronizationScope scope;
 
-	private ISynchronizationScopeChangeListener scopeChangeListener;
+	private final ISynchronizationScopeChangeListener scopeChangeListener;
 
 	/**
 	 * Internal resource synchronization event. Can contain a result.
@@ -262,7 +262,6 @@ public abstract class SubscriberEventHandler extends BackgroundEventHandler {
 	 * subscribers that don't support the optimization, all resources in the subscriber are manually re-calculated.
 	 * @param resource the resources to check
 	 * @param depth the depth
-	 * @param monitor
 	 */
 	protected abstract void collectAll(
 		IResource resource,
@@ -272,7 +271,6 @@ public abstract class SubscriberEventHandler extends BackgroundEventHandler {
 	/**
 	 * Feed the given events to the set. The appropriate method on the set is called
 	 * for each event type.
-	 * @param events
 	 */
 	protected abstract void dispatchEvents(SubscriberEvent[] events, IProgressMonitor monitor);
 
@@ -316,6 +314,8 @@ public abstract class SubscriberEventHandler extends BackgroundEventHandler {
 							event.getResource(),
 							((ResourceEvent)event).getDepth(),
 							Policy.subMonitorFor(monitor, 64));
+					break;
+				default:
 					break;
 			}
 		} catch (OperationCanceledException e) {

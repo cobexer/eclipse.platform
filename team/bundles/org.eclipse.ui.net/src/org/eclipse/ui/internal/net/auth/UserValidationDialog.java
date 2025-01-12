@@ -19,7 +19,12 @@ import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Shell;
+import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.internal.net.NetUIMessages;
 
@@ -92,15 +97,11 @@ public class UserValidationDialog extends Dialog {
 		this.message = message;
 		setBlockOnOpen(true);
 	}
-	/**
-	 */
 	@Override
 	protected void configureShell(Shell newShell) {
 		super.configureShell(newShell);
 		newShell.setText(NetUIMessages.UserValidationDialog_0);
 	}
-	/**
-	 */
 	@Override
 	public void create() {
 		super.create();
@@ -108,8 +109,6 @@ public class UserValidationDialog extends Dialog {
 		usernameField.selectAll();
 		usernameField.setFocus();
 	}
-	/**
-	 */
 	@Override
 	protected Control createDialogArea(Composite parent) {
 		Composite main = new Composite(parent, SWT.NONE);
@@ -128,15 +127,12 @@ public class UserValidationDialog extends Dialog {
 
 		createUsernameFields(main);
 		createPasswordFields(main);
-		PlatformUI.getWorkbench().getHelpSystem().setHelp(main,
-				"org.eclipse.update.ui.UserValidationDialog"); //$NON-NLS-1$
+		PlatformUI.setHelp(main, "org.eclipse.update.ui.UserValidationDialog"); //$NON-NLS-1$
 		return main;
 	}
 
 	/**
 	 * Creates the three widgets that represent the user name entry area.
-	 *
-	 * @param parent
 	 */
 	protected void createPasswordFields(Composite parent) {
 		new Label(parent, SWT.NONE).setText(NetUIMessages.UserValidationDialog_2);
@@ -151,8 +147,6 @@ public class UserValidationDialog extends Dialog {
 
 	/**
 	 * Creates the three widgets that represent the user name entry area.
-	 *
-	 * @param parent
 	 */
 	protected void createUsernameFields(Composite parent) {
 		new Label(parent, SWT.NONE).setText(NetUIMessages.UserValidationDialog_3);

@@ -13,49 +13,59 @@
  *******************************************************************************/
 package org.eclipse.team.tests.core.mapping;
 
-import junit.framework.Test;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.mapping.ResourceMapping;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IAdaptable;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
 import org.eclipse.team.core.mapping.ISynchronizationScopeManager;
 import org.eclipse.team.core.subscribers.SubscriberScopeManager;
 import org.eclipse.team.internal.ui.Utils;
-import org.eclipse.team.tests.core.TeamTest;
-import org.eclipse.ui.*;
+import org.eclipse.ui.IWorkingSet;
+import org.eclipse.ui.IWorkingSetManager;
+import org.eclipse.ui.PlatformUI;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class ScopeTests extends TeamTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class ScopeTests {
 
-	public static Test suite() {
-		return suite(ScopeTests.class);
-	}
 	private IProject project1, project2, project3;
 	private IWorkingSet workingSet;
 	private SubscriberScopeManager manager;
 
-	public ScopeTests() {
-		super();
-	}
 
-	public ScopeTests(String name) {
-		super(name);
-	}
-
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		project1 = createProject("p1", new String[]{"file.txt"});
-		project2 = createProject("p2", new String[]{"file.txt"});
-		project3 = createProject("p3", new String[]{"file.txt"});
+	@BeforeEach
+	public void setUp() throws Exception {
+		project1 = createProjectWithFile("p1", "file.txt");
+		project2 = createProjectWithFile("p2", "file.txt");
+		project3 = createProjectWithFile("p3", "file.txt");
 		IWorkingSetManager manager = PlatformUI.getWorkbench().getWorkingSetManager();
 		workingSet = manager.createWorkingSet("TestWS", new IProject[] { project1 });
 		manager.addWorkingSet(workingSet);
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
+	/*
+	 * This method creates a project with the given resources
+	 */
+	private IProject createProjectWithFile(String name, String fileName) throws CoreException {
+		IProject project = getWorkspace().getRoot().getProject(name);
+		createInWorkspace(project);
+		createInWorkspace(project.getFile(fileName));
+		return project;
+	}
+
+	@AfterEach
+	public void tearDown() throws Exception {
 		this.manager.dispose();
 		IWorkingSetManager manager = PlatformUI.getWorkbench().getWorkingSetManager();
 		manager.removeWorkingSet(workingSet);
@@ -73,10 +83,10 @@ public class ScopeTests extends TeamTest {
 	}
 
 	private void testProjectContainment(ISynchronizationScopeManager sm, IProject project) {
-		if (isInWorkingSet(project) && !isInScope(sm, project))
-			fail(project.getName() + " is in the working set but not in the scope");
-		if (!isInWorkingSet(project) && isInScope(sm, project))
-			fail(project.getName() + " is in scope but not in the working set");
+		assertFalse(isInWorkingSet(project) && !isInScope(sm, project),
+				project.getName() + " is in the working set but not in the scope");
+		assertFalse(!isInWorkingSet(project) && isInScope(sm, project),
+				project.getName() + " is in scope but not in the working set");
 	}
 
 	private boolean isInScope(ISynchronizationScopeManager sm, IProject project) {
@@ -100,6 +110,7 @@ public class ScopeTests extends TeamTest {
 		return manager;
 	}
 
+	@Test
 	public void testScopeExpansion() throws CoreException, OperationCanceledException, InterruptedException {
 		ISynchronizationScopeManager sm = createScopeManager();
 		assertProperContainment(sm);
@@ -107,12 +118,13 @@ public class ScopeTests extends TeamTest {
 		assertProperContainment(sm);
 	}
 
-//	public void testScopeContraction() throws OperationCanceledException, InterruptedException, CoreException {
-//		workingSet.setElements( new IProject[] { project1, project2 });
-//		ISynchronizationScopeManager sm = createScopeManager();
-//		assertProperContainment(sm);
-//		workingSet.setElements( new IProject[] { project1 });
-//		assertProperContainment(sm);
-//	}
+	@Test
+	public void testScopeContraction() throws OperationCanceledException, InterruptedException, CoreException {
+		workingSet.setElements( new IProject[] { project1, project2 });
+		ISynchronizationScopeManager sm = createScopeManager();
+		assertProperContainment(sm);
+		workingSet.setElements( new IProject[] { project1 });
+		assertProperContainment(sm);
+	}
 
 }

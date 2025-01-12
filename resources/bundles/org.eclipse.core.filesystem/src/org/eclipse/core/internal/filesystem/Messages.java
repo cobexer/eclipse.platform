@@ -33,7 +33,7 @@ public class Messages extends NLS {
 	public static String failedCreateWrongType;
 	public static String failedCreateAccessDenied;
 	public static String failedMove;
-	public static String failedReadDuringWrite;
+	public static String failedCopy;
 	public static String fileExists;
 	public static String fileNotFound;
 	public static String moving;

@@ -13,12 +13,16 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.content;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import org.eclipse.core.internal.content.LazyInputStream;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for {@link LazyInputStream}.
@@ -40,18 +44,28 @@ public class LazyInputStreamTest {
 		}
 
 		@Override
-		public int getBufferSize() {
+		public long getBufferSize() {
 			return super.getBufferSize();
 		}
 
 		@Override
-		public int getMark() {
+		public void setBufferSize(long bufferSize) {
+			super.setBufferSize(bufferSize);
+		}
+
+		@Override
+		public long getMark() {
 			return super.getMark();
 		}
 
 		@Override
-		public int getOffset() {
+		public long getOffset() {
 			return super.getOffset();
+		}
+
+		@Override
+		protected void setOffset(long offset) {
+			super.setOffset(offset);
 		}
 	}
 
@@ -63,11 +77,11 @@ public class LazyInputStreamTest {
 	public void testReadSingleByte() throws IOException {
 		ByteArrayInputStream underlying = new ByteArrayInputStream(DATA.getBytes());
 		OpenLazyInputStream stream = new OpenLazyInputStream(underlying, 7);
-		assertEquals("1.0", '0', stream.read());
-		assertEquals("1.1", '1', stream.read());
+		assertEquals('0', stream.read());
+		assertEquals('1', stream.read());
 		stream.skip(10);
-		assertEquals("1.2", '2', stream.read());
-		assertEquals("1.3", 13, stream.getOffset());
+		assertEquals('2', stream.read());
+		assertEquals(13, stream.getOffset());
 		stream.close();
 	}
 
@@ -78,35 +92,35 @@ public class LazyInputStreamTest {
 		stream.skip(4);
 		byte[] buffer = new byte[7];
 		int read = stream.read(buffer);
-		assertEquals("1.0", buffer.length, read);
-		assertEquals("1.1", DATA.substring(4, 4 + buffer.length), new String(buffer));
-		assertEquals("1.2", 11, stream.getOffset());
+		assertThat(buffer).hasSize(read);
+		assertEquals(DATA.substring(4, 4 + buffer.length), new String(buffer));
+		assertEquals(11, stream.getOffset());
 		read = stream.read(buffer, 3, 4);
-		assertEquals("2.0", 4, read);
-		assertEquals("2.1", DATA.substring(11, 11 + read), new String(buffer, 3, read));
-		assertEquals("2.2", 15, stream.getOffset());
+		assertEquals(4, read);
+		assertEquals(DATA.substring(11, 11 + read), new String(buffer, 3, read));
+		assertEquals(15, stream.getOffset());
 		stream.mark(0);
 		buffer = new byte[100];
 		read = stream.read(buffer);
-		assertEquals("3.0", DATA.length() - 15, read);
-		assertEquals("3.1", DATA.substring(15, 15 + read), new String(buffer, 0, read));
-		assertEquals("3.2", 0, stream.available());
+		assertEquals(DATA.length() - 15, read);
+		assertEquals(DATA.substring(15, 15 + read), new String(buffer, 0, read));
+		assertEquals(0, stream.available());
 		stream.reset();
-		assertEquals("4.0", 15, stream.getOffset());
+		assertEquals(15, stream.getOffset());
 		read = stream.read(buffer, 10, 14);
-		assertEquals("4.1", 29, stream.getOffset());
-		assertEquals("4.2", 1, stream.available());
-		assertEquals("4.3", 14, read);
-		assertEquals("4.4", DATA.substring(15, 15 + read), new String(buffer, 10, read));
+		assertEquals(29, stream.getOffset());
+		assertEquals(1, stream.available());
+		assertEquals(14, read);
+		assertEquals(DATA.substring(15, 15 + read), new String(buffer, 10, read));
 		read = stream.read(buffer);
-		assertEquals("5.0", 30, stream.getOffset());
-		assertEquals("5.1", 0, stream.available());
-		assertEquals("5.2", 1, read);
-		assertEquals("5.3", (byte) DATA.charAt(29), buffer[0]);
+		assertEquals(30, stream.getOffset());
+		assertEquals(0, stream.available());
+		assertEquals(1, read);
+		assertEquals((byte) DATA.charAt(29), buffer[0]);
 		read = stream.read(buffer);
-		assertEquals("6.0", 30, stream.getOffset());
-		assertEquals("6.1", 0, stream.available());
-		assertEquals("6.2", -1, read);
+		assertEquals(30, stream.getOffset());
+		assertEquals(0, stream.available());
+		assertEquals(-1, read);
 		stream.close();
 	}
 
@@ -114,23 +128,23 @@ public class LazyInputStreamTest {
 	public void testMarkAndReset() throws IOException {
 		ByteArrayInputStream underlying = new ByteArrayInputStream(DATA.getBytes());
 		OpenLazyInputStream stream = new OpenLazyInputStream(underlying, 7);
-		assertEquals("0.1", 30, stream.available());
+		assertEquals(30, stream.available());
 		stream.skip(13);
-		assertEquals("0.2", 17, stream.available());
+		assertEquals(17, stream.available());
 		stream.mark(0);
-		assertEquals("2.0", 13, stream.getMark());
-		assertEquals("2.1", '3', stream.read());
-		assertEquals("2.2", '4', stream.read());
-		assertEquals("2.3", 15, stream.getOffset());
-		assertEquals("2.4", 15, stream.available());
+		assertEquals(13, stream.getMark());
+		assertEquals('3', stream.read());
+		assertEquals('4', stream.read());
+		assertEquals(15, stream.getOffset());
+		assertEquals(15, stream.available());
 		stream.reset();
-		assertEquals("2.5", 17, stream.available());
-		assertEquals("2.6", 13, stream.getOffset());
+		assertEquals(17, stream.available());
+		assertEquals(13, stream.getOffset());
 		stream.reset();
-		assertEquals("2.7", 17, stream.available());
-		assertEquals("2.8", 13, stream.getOffset());
+		assertEquals(17, stream.available());
+		assertEquals(13, stream.getOffset());
 		stream.rewind();
-		assertEquals("3.0", 0, stream.getOffset());
+		assertEquals(0, stream.getOffset());
 		stream.close();
 	}
 
@@ -141,8 +155,8 @@ public class LazyInputStreamTest {
 		ByteArrayInputStream underlying = new ByteArrayInputStream(changedData);
 		OpenLazyInputStream stream = new OpenLazyInputStream(underlying, 7);
 		int c = stream.read();
-		assertNotEquals("1.0", -1, c);
-		assertEquals("2.0", 0xFF, c);
+		assertNotEquals(-1, c);
+		assertEquals(0xFF, c);
 		stream.close();
 	}
 
@@ -155,8 +169,35 @@ public class LazyInputStreamTest {
 		ByteArrayInputStream underlying = new ByteArrayInputStream(contents);
 		OpenLazyInputStream stream = new OpenLazyInputStream(underlying, 7);
 		for (int i = 0; i < VARIOUS_INTS.length; i++) {
-			assertEquals("1.0." + i, VARIOUS_INTS[i], stream.read());
+			assertEquals(VARIOUS_INTS[i], stream.read(), i + "");
 		}
 		stream.close();
+	}
+
+	@Test
+	public void testEnsureAvailable_BufferSizeDoesNotOverflow() throws IOException {
+		InputStream infinitelyEmpty = new InputStream() {
+
+			@Override
+			public int read() throws IOException {
+				return 0;
+			}
+
+			@Override
+			public int read(byte[] b, int off, int len) throws IOException {
+				return len;
+			}
+		};
+
+		try (OpenLazyInputStream objectUnderTest = new OpenLazyInputStream(infinitelyEmpty, 10)) {
+			// HACK: needed to avoid filling up the RAM with 0's when calling "skip"
+			objectUnderTest.setBufferSize(Integer.MAX_VALUE);
+			objectUnderTest.setOffset(Integer.MAX_VALUE);
+
+			objectUnderTest.skip(1);
+
+			assertTrue(objectUnderTest.getBufferSize() > Integer.MAX_VALUE, "The buffer size suffered an Overflow");
+		}
+
 	}
 }

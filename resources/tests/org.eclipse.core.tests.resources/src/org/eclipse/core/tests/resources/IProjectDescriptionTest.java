@@ -14,20 +14,39 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
 import java.util.HashMap;
 import java.util.Map;
 import org.eclipse.core.internal.events.BuildCommand;
 import org.eclipse.core.internal.resources.Project;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.ICommand;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.tests.internal.builders.CustomTriggerBuilder;
+import org.junit.Rule;
+import org.junit.Test;
 
 /**
  * Tests protocol of IProjectDescription and other specified behavior
  * that relates to the project description.
  */
-public class IProjectDescriptionTest extends ResourceTest {
+public class IProjectDescriptionTest {
 
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
+
+	@Test
 	public void testDescriptionConstant() {
 		assertEquals("1.0", ".project", IProjectDescription.DESCRIPTION_FILE_NAME);
 	}
@@ -35,9 +54,10 @@ public class IProjectDescriptionTest extends ResourceTest {
 	/**
 	 * Tests that setting the build spec preserves any instantiated builder.
 	 */
+	@Test
 	public void testBuildSpecBuilder() throws Exception {
 		Project project = (Project) getWorkspace().getRoot().getProject("ProjectTBSB");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		project.refreshLocal(IResource.DEPTH_INFINITE, null);
 		IFile descriptionFile = project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME);
 		assertTrue("1.0", descriptionFile.exists());
@@ -67,46 +87,39 @@ public class IProjectDescriptionTest extends ResourceTest {
 	 * Tests that the description file is not dirtied if the description has not actually
 	 * changed.
 	 */
-	public void testDirtyDescription() {
+	@Test
+	public void testDirtyDescription() throws Exception {
 		IProject project = getWorkspace().getRoot().getProject("Project");
 		IProject target1 = getWorkspace().getRoot().getProject("target1");
 		IProject target2 = getWorkspace().getRoot().getProject("target2");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		IFile descriptionFile = project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME);
 		assertTrue("1.0", descriptionFile.exists());
 
 		long timestamp = descriptionFile.getLocalTimeStamp();
-		try {
-			//wait a bit to ensure that timestamp granularity does not
-			//spoil our test
-			Thread.sleep(1000);
-		} catch (InterruptedException e1) {
-			fail("1.99", e1);
-		}
-		try {
-			IProjectDescription description = project.getDescription();
-			description.setBuildSpec(description.getBuildSpec());
-			description.setComment(description.getComment());
-			description.setDynamicReferences(description.getDynamicReferences());
-			description.setLocation(description.getLocation());
-			description.setName(description.getName());
-			description.setNatureIds(description.getNatureIds());
-			description.setReferencedProjects(description.getReferencedProjects());
-			project.setDescription(description, IResource.NONE, null);
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
+
+		// wait a bit to ensure that timestamp granularity does not
+		// spoil our test
+		Thread.sleep(1000);
+
+		IProjectDescription description = project.getDescription();
+		description.setBuildSpec(description.getBuildSpec());
+		description.setComment(description.getComment());
+		description.setDynamicReferences(description.getDynamicReferences());
+		description.setLocationURI(description.getLocationURI());
+		description.setName(description.getName());
+		description.setNatureIds(description.getNatureIds());
+		description.setReferencedProjects(description.getReferencedProjects());
+		project.setDescription(description, IResource.NONE, null);
+
 		//the timestamp should be the same
 		assertEquals("2.0", timestamp, descriptionFile.getLocalTimeStamp());
 
 		//adding a dynamic reference should not dirty the file
-		try {
-			IProjectDescription description = project.getDescription();
-			description.setDynamicReferences(new IProject[] {target1, target2});
-			project.setDescription(description, IResource.NONE, null);
-		} catch (CoreException e) {
-			fail("3.99", e);
-		}
+		description = project.getDescription();
+		description.setDynamicReferences(new IProject[] { target1, target2 });
+		project.setDescription(description, IResource.NONE, null);
+
 		assertEquals("2.1", timestamp, descriptionFile.getLocalTimeStamp());
 	}
 
@@ -114,122 +127,84 @@ public class IProjectDescriptionTest extends ResourceTest {
 	 * Tests that the description file is dirtied if the description has actually
 	 * changed. This is a regression test for bug 64128.
 	 */
-	public void testDirtyBuildSpec() {
+	@Test
+	public void testDirtyBuildSpec() throws CoreException {
 		IProject project = getWorkspace().getRoot().getProject("Project");
 		IFile projectDescription = project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME);
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		String key = "key";
 		String value1 = "value1";
 		String value2 = "value2";
-		try {
-			IProjectDescription description = project.getDescription();
-			ICommand newCommand = description.newCommand();
-			Map<String, String> args = new HashMap<>();
-			args.put(key, value1);
-			newCommand.setArguments(args);
-			description.setBuildSpec(new ICommand[] {newCommand});
-			project.setDescription(description, IResource.NONE, null);
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+
+		IProjectDescription description = project.getDescription();
+		ICommand newCommand = description.newCommand();
+		Map<String, String> args = new HashMap<>();
+		args.put(key, value1);
+		newCommand.setArguments(args);
+		description.setBuildSpec(new ICommand[] { newCommand });
+		project.setDescription(description, IResource.NONE, null);
+
 		//changing a build command argument should dirty the description file
 		long modificationStamp = projectDescription.getModificationStamp();
-		try {
-			IProjectDescription description = project.getDescription();
-			ICommand command = description.getBuildSpec()[0];
-			Map<String, String> args = command.getArguments();
-			args.put(key, value2);
-			command.setArguments(args);
-			description.setBuildSpec(new ICommand[] {command});
-			project.setDescription(description, IResource.NONE, null);
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
+		description = project.getDescription();
+		ICommand command = description.getBuildSpec()[0];
+		args = command.getArguments();
+		args.put(key, value2);
+		command.setArguments(args);
+		description.setBuildSpec(new ICommand[] { command });
+		project.setDescription(description, IResource.NONE, null);
+
 		assertTrue("3.0", modificationStamp != projectDescription.getModificationStamp());
 	}
 
-	public void testDynamicProjectReferences() {
+	@Test
+	public void testDynamicProjectReferences() throws CoreException {
 		IProject target1 = getWorkspace().getRoot().getProject("target1");
 		IProject target2 = getWorkspace().getRoot().getProject("target2");
-		ensureExistsInWorkspace(target1, true);
-		ensureExistsInWorkspace(target2, true);
+		createInWorkspace(target1);
+		createInWorkspace(target2);
 
 		IProject project = getWorkspace().getRoot().getProject("project");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 
-		IProjectDescription description = null;
-		try {
-			description = project.getDescription();
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IProjectDescription description = project.getDescription();
 		description.setReferencedProjects(new IProject[] {target1});
 		description.setDynamicReferences(new IProject[] {target2});
-		try {
-			project.setDescription(description, getMonitor());
-		} catch (CoreException e) {
-			fail("2.0", e);
-		}
-		IProject[] refs = null;
-		try {
-			refs = project.getReferencedProjects();
-		} catch (CoreException e2) {
-			fail("2.99", e2);
-		}
-		assertEquals("2.1", 2, refs.length);
-		assertEquals("2.2", target1, refs[0]);
-		assertEquals("2.3", target2, refs[1]);
-		assertEquals("2.4", 1, target1.getReferencingProjects().length);
-		assertEquals("2.5", 1, target2.getReferencingProjects().length);
+		project.setDescription(description, createTestMonitor());
+		IProject[] refs = project.getReferencedProjects();
+		assertThat(refs).containsExactly(target1, target2);
+		assertThat(target1.getReferencingProjects()).hasSize(1);
+		assertThat(target2.getReferencingProjects()).hasSize(1);
 
 		//get references for a non-existent project
-		try {
-			getWorkspace().getRoot().getProject("DoesNotExist").getReferencedProjects();
-			fail("3.0");
-		} catch (CoreException e1) {
-			//should fail
-		}
+		assertThrows(CoreException.class,
+				() -> getWorkspace().getRoot().getProject("DoesNotExist").getReferencedProjects());
 	}
 
 	/**
 	 * Tests IProjectDescription project references
 	 */
-	public void testProjectReferences() {
+	@Test
+	public void testProjectReferences() throws CoreException {
 		IProject target = getWorkspace().getRoot().getProject("Project1");
-		ensureExistsInWorkspace(target, true);
+		createInWorkspace(target);
 
 		IProject project = getWorkspace().getRoot().getProject("Project2");
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 
-		try {
-			project.open(getMonitor());
-		} catch (CoreException e) {
-			fail("0.0", e);
-		}
-
-		IProjectDescription description = null;
-		try {
-			description = project.getDescription();
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		project.open(createTestMonitor());
+		IProjectDescription description = project.getDescription();
 		description.setReferencedProjects(new IProject[] {target});
-		try {
-			project.setDescription(description, getMonitor());
-		} catch (CoreException e) {
-			fail("2.0", e);
-		}
-		assertEquals("2.1", 1, target.getReferencingProjects().length);
+		project.setDescription(description, createTestMonitor());
+		assertThat(target.getReferencingProjects()).hasSize(1);
 
 		//get references for a non-existent project
-		try {
-			getWorkspace().getRoot().getProject("DoesNotExist").getReferencedProjects();
-			fail("3.0");
-		} catch (CoreException e1) {
-			//should fail
-		}
+		assertThrows(CoreException.class,
+				() -> getWorkspace().getRoot().getProject("DoesNotExist").getReferencedProjects());
+
 		//get referencing projects for a non-existent project
 		IProject[] refs = getWorkspace().getRoot().getProject("DoesNotExist2").getReferencingProjects();
-		assertEquals("4.0", 0, refs.length);
+		assertThat(refs).isEmpty();
 	}
+
 }

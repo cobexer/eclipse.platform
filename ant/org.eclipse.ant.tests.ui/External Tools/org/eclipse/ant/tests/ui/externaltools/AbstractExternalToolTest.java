@@ -16,8 +16,6 @@ package org.eclipse.ant.tests.ui.externaltools;
 import java.util.HashMap;
 import java.util.Map;
 
-import junit.framework.Test;
-
 import org.eclipse.ant.launching.IAntLaunchConstants;
 import org.eclipse.ant.tests.ui.testplugin.AbstractAntUITest;
 import org.eclipse.core.externaltools.internal.IExternalToolConstants;
@@ -31,9 +29,11 @@ import org.eclipse.debug.core.ILaunchConfigurationType;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.ui.externaltools.internal.model.BuilderUtils;
 
+import junit.framework.Test;
+
 /**
  * Abstract {@link Test} class for external tools
- * 
+ *
  * @since 3.5.100 org.eclipse.ant.tests.ui
  */
 @SuppressWarnings("restriction")
@@ -42,17 +42,8 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 	static final String EXT_BUILD_FILE_NAME = "ext-builders.xml"; //$NON-NLS-1$
 
 	/**
-	 * Constructor
-	 * 
-	 * @param name
-	 */
-	public AbstractExternalToolTest(String name) {
-		super(name);
-	}
-
-	/**
 	 * Creates a new external tool builder for the given project from the given {@link ILaunchConfiguration}
-	 * 
+	 *
 	 * @param project
 	 *            the parent project
 	 * @param name
@@ -60,10 +51,9 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 	 * @param args
 	 *            the argument map to set in the new configuration
 	 * @return a new Ant build {@link ILaunchConfiguration} or <code>null</code>
-	 * @throws Exception
 	 */
 	protected ILaunchConfiguration createExternalToolBuilder(IProject project, String name, Map<String, ? extends Object> args) throws Exception {
-		IFolder dir = getProject().getFolder(BuilderCoreUtils.BUILDER_FOLDER_NAME);
+		IFolder dir = project.getFolder(BuilderCoreUtils.BUILDER_FOLDER_NAME);
 		if (!dir.exists()) {
 			dir.create(true, true, null);
 		}
@@ -78,15 +68,9 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Creates a new external tool Ant build configuration that has never been saved
-	 * 
-	 * @param project
-	 * @param name
-	 * @param args
-	 * @return
-	 * @throws Exception
 	 */
 	protected ILaunchConfigurationWorkingCopy createExternalToolBuilderWorkingCopy(IProject project, String name, Map<String, Object> args) throws Exception {
-		IFolder dir = getProject().getFolder(BuilderCoreUtils.BUILDER_FOLDER_NAME);
+		IFolder dir = project.getFolder(BuilderCoreUtils.BUILDER_FOLDER_NAME);
 		if (!dir.exists()) {
 			dir.create(true, true, null);
 		}
@@ -101,9 +85,8 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Creates a new empty {@link ICommand}
-	 * 
+	 *
 	 * @return the new build {@link ICommand}
-	 * @throws Exception
 	 */
 	protected ICommand createEmptyBuildCommand() throws Exception {
 		return getProject().getDescription().newCommand();
@@ -111,10 +94,8 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Creates a new builder {@link ICommand}
-	 * 
-	 * @param config
+	 *
 	 * @return the new builder {@link ICommand}
-	 * @throws Exception
 	 */
 	protected ICommand createBuildCommand(ILaunchConfiguration config) throws Exception {
 		return BuilderUtils.commandFromLaunchConfig(getProject(), config);
@@ -122,7 +103,7 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Returns a map of arguments for an Ant buildfile using Eclipse 2.0 arguments.
-	 * 
+	 *
 	 * @return a map of 2.0 arguments for an Ant buildfile.
 	 */
 	protected Map<String, String> get20AntArgumentMap() {
@@ -142,7 +123,7 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Returns a map of arguments for executing a program using Eclipse 2.0 arguments.
-	 * 
+	 *
 	 * @return a map of 2.0 arguments for a program
 	 */
 	protected Map<String, String> get20ProgramArgumentMap() {
@@ -162,7 +143,7 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Returns a map of arguments for executing an Ant buildfile using Eclipse 2.1 arguments.
-	 * 
+	 *
 	 * @return a map of 2.1 arguments for an Ant buildfile
 	 */
 	protected Map<String, String> get21AntArgumentMap() {
@@ -187,7 +168,7 @@ public abstract class AbstractExternalToolTest extends AbstractAntUITest {
 
 	/**
 	 * Returns a map of arguments for executing a program buildfile using Eclipse 2.1 arguments.
-	 * 
+	 *
 	 * @return a map of 2.1 arguments for a program
 	 */
 	protected Map<String, String> get21ProgramArgumentMap() {

@@ -14,17 +14,36 @@
 
 package org.eclipse.core.tools.runtime;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import org.eclipse.core.runtime.PerformanceStats;
-import org.eclipse.core.tools.*;
-import org.eclipse.jface.action.*;
+import org.eclipse.core.tools.CopyStructuredSelectionAction;
+import org.eclipse.core.tools.Messages;
+import org.eclipse.core.tools.TableSelectionProviderDecorator;
+import org.eclipse.core.tools.TableWithTotalView;
+import org.eclipse.jface.action.Action;
+import org.eclipse.jface.action.IToolBarManager;
+import org.eclipse.jface.action.MenuManager;
 import org.eclipse.jface.resource.ImageDescriptor;
-import org.eclipse.jface.viewers.*;
+import org.eclipse.jface.viewers.ColumnLayoutData;
+import org.eclipse.jface.viewers.ColumnPixelData;
+import org.eclipse.jface.viewers.ColumnWeightData;
+import org.eclipse.jface.viewers.IColorProvider;
+import org.eclipse.jface.viewers.ITableLabelProvider;
+import org.eclipse.jface.viewers.ITreeContentProvider;
+import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.jface.viewers.TableViewer;
+import org.eclipse.jface.viewers.Viewer;
+import org.eclipse.jface.viewers.ViewerComparator;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Image;
-import org.eclipse.swt.widgets.*;
+import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Menu;
 import org.eclipse.ui.IActionBars;
 
 /**
@@ -165,13 +184,13 @@ public class EventsView extends TableWithTotalView {
 	public final static int COLUMN_COUNT = 3;
 	public final static int COLUMN_TIME = 4;
 
-	private String columnHeaders[] = {Messages.stats_eventHeader, //
+	private final String columnHeaders[] = {Messages.stats_eventHeader, //
 			Messages.stats_blameHeader, //
 			Messages.stats_contextHeader, //
 			Messages.stats_countHeader, //
 			Messages.stats_timeHeader, //
 	};
-	private ColumnLayoutData columnLayouts[] = {new ColumnWeightData(80), // event
+	private final ColumnLayoutData columnLayouts[] = {new ColumnWeightData(80), // event
 			new ColumnWeightData(180), // blame
 			new ColumnWeightData(40), // context
 			new ColumnPixelData(65), // count
@@ -185,7 +204,7 @@ public class EventsView extends TableWithTotalView {
 		String[] totals = new String[getColumnHeaders().length];
 		int count = 0;
 		int events = 0;
-		int time = 0;
+		long time = 0;
 		if (!iter.hasNext()) {
 			Object[] elements = ((ITreeContentProvider) viewer.getContentProvider()).getElements(viewer.getInput());
 			@SuppressWarnings({ "rawtypes", "unchecked" })
@@ -215,9 +234,7 @@ public class EventsView extends TableWithTotalView {
 			}
 		};
 		resetAction.setToolTipText("Reset all event statistics"); //$NON-NLS-1$
-		resetAction.setImageDescriptor(ImageDescriptor.createFromURLSupplier(true, () -> {
-			return EventsView.class.getResource("/icons/clear.gif"); //$NON-NLS-1$
-		}));
+		resetAction.setImageDescriptor(ImageDescriptor.createFromURLSupplier(true, () -> EventsView.class.getResource("/icons/clear.gif")));
 		// Add copy selection action
 
 		IActionBars bars = getViewSite().getActionBars();

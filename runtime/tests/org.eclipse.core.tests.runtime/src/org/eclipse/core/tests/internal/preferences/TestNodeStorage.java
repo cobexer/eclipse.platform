@@ -13,12 +13,14 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.preferences;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import org.eclipse.core.runtime.preferences.AbstractPreferenceStorage;
 
 public class TestNodeStorage extends AbstractPreferenceStorage {
 
-	private Map<String, Properties> storage = new HashMap<>();
+	private final Map<String, Properties> storage = new HashMap<>();
 
 	@Override
 	public Properties load(String nodePath) {

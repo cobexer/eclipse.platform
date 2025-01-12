@@ -13,21 +13,28 @@
  *******************************************************************************/
 package org.eclipse.core.tests.runtime.jobs;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runners.MethodSorters;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 /**
  * Test for bug 574883
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
-public class Bug_574883 extends AbstractJobManagerTest {
+@TestMethodOrder(MethodOrderer.MethodName.class)
+public class Bug_574883 extends AbstractJobTest {
 
 	static class SerialExecutor extends Job {
 
@@ -204,7 +211,6 @@ public class Bug_574883 extends AbstractJobManagerTest {
 		Job[] jobs = Job.getJobManager().find(this);
 		int length = jobs.length;
 		int firstState = executions.get();
-		System.out.println(garbage);
 		try {
 		if (length > 0) {
 				// Check if that still would work?

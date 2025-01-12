@@ -24,10 +24,9 @@ import org.eclipse.ui.model.IWorkbenchAdapter;
 
 public class AdapterFactory implements IAdapterFactory {
 
-	private IWorkbenchAdapter modelAdapter = new PatchWorkbenchAdapter();
+	private final IWorkbenchAdapter modelAdapter = new PatchWorkbenchAdapter();
 	private ISynchronizationCompareAdapter compareAdapter;
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T getAdapter(Object adaptableObject, Class<T> adapterType) {
 		if (adapterType == ResourceMapping.class) {

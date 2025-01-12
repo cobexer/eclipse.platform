@@ -14,11 +14,19 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.builders;
 
-import java.util.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IConfigurationElement;
+import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
-import org.junit.Assert;
 
 /**
  * An abstract builder that is designed to be extended for testing purposes.
@@ -37,7 +45,8 @@ public abstract class TestBuilder extends IncrementalProjectBuilder {
 		/**
 		 * Fetch the scheduling rule for the build
 		 */
-		public ISchedulingRule getRule(String name, IncrementalProjectBuilder builder, int trigger, Map<String, String> args) {
+		public ISchedulingRule getRule(String name, IncrementalProjectBuilder projectBuilder, int trigger,
+				Map<String, String> args) {
 			return ResourcesPlugin.getWorkspace().getRoot();
 		}
 
@@ -94,16 +103,14 @@ public abstract class TestBuilder extends IncrementalProjectBuilder {
 	 * failure if expectations are not met. If successful, clears the list of
 	 * expected and actual events in preparation for the next test.
 	 */
-	public void assertLifecycleEvents(String text) {
-		Assert.assertEquals(text, expectedEvents, actualEvents);
+	public void assertLifecycleEvents() {
+		assertEquals(expectedEvents, actualEvents);
 		reset();
 	}
 
 	/**
 	 * Implements the inherited abstract method in
 	 * <code>InternalBuilder</code>.
-	 *
-	 * @see InternalBuilder#build(IResourceDelta,int,IProgressMonitor)
 	 */
 	@Override
 	protected IProject[] build(int kind, Map<String, String> args, IProgressMonitor monitor) throws CoreException {
@@ -150,27 +157,27 @@ public abstract class TestBuilder extends IncrementalProjectBuilder {
 	/**
 	 * Return the configuration element that created this builder.
 	 *
-	 * @see setInitializationData(IConfigurationElement, String, Object)
+	 * @see #setInitializationData(IConfigurationElement, String, Object)
 	 */
 	public IConfigurationElement getConfigurationElement() {
 		return config;
 	}
 
 	/**
-	 * Return the data, always a <code>Hashtable</code> or <code>String</code>,
-	 * that was set when this builder was initialized.
+	 * Return the data, always a <code>Hashtable</code> or <code>String</code>, that
+	 * was set when this builder was initialized.
 	 *
-	 * @see setInitializationData(IConfigurationElement, String, Object)
+	 * @see #setInitializationData(IConfigurationElement, String, Object)
 	 */
 	public Object getData() {
 		return data;
 	}
 
 	/**
-	 * Return the name of the child configuration element that named this
-	 * builder in its class attribute.
+	 * Return the name of the child configuration element that named this builder in
+	 * its class attribute.
 	 *
-	 * @see setInitializationData(IConfigurationElement, String, Object)
+	 * @see #setInitializationData(IConfigurationElement, String, Object)
 	 */
 	public String getName() {
 		return name;
@@ -192,12 +199,6 @@ public abstract class TestBuilder extends IncrementalProjectBuilder {
 		ruleCallBack = null;
 	}
 
-	/**
-	 * Part of <code>IExecutableExtensionAdaptor</code> interface.
-	 *
-	 * @see IExecutableExtensionAdaptor
-	 * @see IConfigurationElement#createExecutableExtension(String)
-	 */
 	@Override
 	public void setInitializationData(IConfigurationElement config, String name, Object data) {
 		logPluginLifecycleEvent(SET_INITIALIZATION_DATA);
@@ -206,11 +207,6 @@ public abstract class TestBuilder extends IncrementalProjectBuilder {
 		this.data = data;
 	}
 
-	/**
-	 * Implemented inherited method from <code>BaseBuilder</code>.
-	 *
-	 * @see BaseBuilder#startupOnInitialize
-	 */
 	@Override
 	protected void startupOnInitialize() {
 		logPluginLifecycleEvent(STARTUP_ON_INITIALIZE);

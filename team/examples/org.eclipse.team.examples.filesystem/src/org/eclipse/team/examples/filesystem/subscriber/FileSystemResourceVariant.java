@@ -34,7 +34,7 @@ import org.eclipse.team.examples.filesystem.FileSystemPlugin;
  */
 public class FileSystemResourceVariant extends CachedResourceVariant {
 
-	private java.io.File ioFile;
+	private final java.io.File ioFile;
 	private byte[] bytes;
 
 	/**
@@ -128,9 +128,6 @@ public class FileSystemResourceVariant extends CachedResourceVariant {
 		return new FileSystemResourceVariant[0];
 	}
 
-	/**
-	 * @return
-	 */
 	public InputStream getContents() throws TeamException {
 		try {
 			return new BufferedInputStream(new FileInputStream(ioFile));

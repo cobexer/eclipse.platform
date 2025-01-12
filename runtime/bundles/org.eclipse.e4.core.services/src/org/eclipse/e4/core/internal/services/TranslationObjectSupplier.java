@@ -14,6 +14,8 @@
  ******************************************************************************/
 package org.eclipse.e4.core.internal.services;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Collection;
@@ -25,8 +27,6 @@ import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
-import javax.inject.Inject;
-import javax.inject.Named;
 import org.eclipse.e4.core.contexts.IEclipseContext;
 import org.eclipse.e4.core.di.annotations.Optional;
 import org.eclipse.e4.core.di.suppliers.ExtendedObjectSupplier;
@@ -68,7 +68,7 @@ public class TranslationObjectSupplier extends ExtendedObjectSupplier implements
 	 * Map that contains all {@link IRequestor} that requested an instance of a messages class. Used
 	 * to inform all requestor if the instances have changed due to a locale change.
 	 */
-	private Map<Class<?>, Set<IRequestor>> listeners = new ConcurrentHashMap<>();
+	private final Map<Class<?>, Set<IRequestor>> listeners = new ConcurrentHashMap<>();
 
 	@Override
 	public Object get(IObjectDescriptor descriptor, IRequestor requestor, boolean track, boolean group) {

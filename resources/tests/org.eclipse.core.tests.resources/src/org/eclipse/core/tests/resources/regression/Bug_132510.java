@@ -14,31 +14,32 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Iterator;
 import org.eclipse.core.internal.resources.LinkDescription;
 import org.eclipse.core.internal.resources.ProjectDescription;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests concurrent modification of the project description link table.
  */
-public class Bug_132510 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_132510 {
+
+	@Test
 	public void testBug() {
 		ProjectDescription desc = new ProjectDescription();
-		IPath path1 = new Path("/a/b/");
-		IPath path2 = new Path("/a/c/");
+		IPath path1 = IPath.fromOSString("/a/b/");
+		IPath path2 = IPath.fromOSString("/a/c/");
 		LinkDescription link = new LinkDescription();
 		desc.setLinkLocation(path1, link);
 		HashMap<IPath, LinkDescription> linkMap = desc.getLinks();
 		Iterator<LinkDescription> it = linkMap.values().iterator();
 		desc.setLinkLocation(path2, link);
-		try {
-			it.next();
-		} catch (ConcurrentModificationException e) {
-			fail("4.99", e);
-		}
+		it.next();
 	}
 
 }

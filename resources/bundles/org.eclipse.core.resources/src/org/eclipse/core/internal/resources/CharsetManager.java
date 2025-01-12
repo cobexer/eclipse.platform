@@ -18,11 +18,29 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.eclipse.core.internal.utils.Messages;
 import org.eclipse.core.internal.utils.Policy;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceChangeEvent;
+import org.eclipse.core.resources.IResourceChangeListener;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.ProjectScope;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
@@ -44,12 +62,13 @@ public class CharsetManager implements IManager {
 	 */
 	private class CharsetManagerJob extends Job {
 		private static final int CHARSET_UPDATE_DELAY = 500;
-		private List<Map.Entry<IProject, Boolean>> asyncChanges = new ArrayList<>();
+		private final List<Map.Entry<IProject, Boolean>> asyncChanges = new ArrayList<>();
 
 		public CharsetManagerJob() {
 			super(Messages.resources_charsetUpdating);
 			setSystem(true);
 			setPriority(Job.INTERACTIVE);
+			setRule(workspace.getRoot());
 		}
 
 		@Override
@@ -84,7 +103,7 @@ public class CharsetManager implements IManager {
 					workspace.prepareOperation(rule, monitor);
 					workspace.beginOperation(true);
 					Map.Entry<IProject, Boolean> next;
-					while ((next = getNextChange()) != null) {
+					while (!monitor.isCanceled() && ((next = getNextChange()) != null)) {
 						//just exit if the system is shutting down or has been shut down
 						//it is too late to change the workspace at this point anyway
 						if (systemBundle.getState() != Bundle.ACTIVE)
@@ -125,6 +144,16 @@ public class CharsetManager implements IManager {
 				return !asyncChanges.isEmpty();
 			}
 		}
+
+		public void shutDown() {
+			cancel();
+			wakeUp();
+			try {
+				join(3000, null);
+			} catch (OperationCanceledException | InterruptedException ignored) {
+				// nothing
+			}
+		}
 	}
 
 	private class ResourceChangeListener implements IResourceChangeListener {
@@ -138,7 +167,7 @@ public class CharsetManager implements IManager {
 				// if derived changed, move encoding to correct preferences
 				IPath parentPath = parent.getResource().getProjectRelativePath();
 				for (String affectedResource : affectedResources) {
-					IPath affectedPath = new Path(affectedResource);
+					IPath affectedPath = IPath.fromOSString(affectedResource);
 					// if parentPath is an ancestor of affectedPath
 					if (parentPath.isPrefixOf(affectedPath)) {
 						IResource member = currentProject.findMember(affectedPath);
@@ -192,7 +221,7 @@ public class CharsetManager implements IManager {
 				String[] affectedResources = entry.getValue();
 				Preferences projectPrefs = isDerived.booleanValue() ? projectDerivedPrefs : projectRegularPrefs;
 				for (String affectedResource : affectedResources) {
-					IResourceDelta memberDelta = projectDelta.findMember(new Path(affectedResource));
+					IResourceDelta memberDelta = projectDelta.findMember(IPath.fromOSString(affectedResource));
 					// no changes for the given resource
 					if (memberDelta == null)
 						continue;
@@ -281,7 +310,7 @@ public class CharsetManager implements IManager {
 	 *
 	 * @param resourcePath the path for the resource
 	 * @param recurse whether the parent should be queried
-	 * @return the charset setting for the given resource
+	 * @return the charset setting for the given resource or <code>null</code>.
 	 */
 	public String getCharsetFor(IPath resourcePath, boolean recurse) {
 		Assert.isLegal(resourcePath.segmentCount() >= 1);
@@ -290,10 +319,11 @@ public class CharsetManager implements IManager {
 		Preferences prefs = getPreferences(project, false, false);
 		Preferences derivedPrefs = getPreferences(project, false, true);
 
-		if (prefs == null && derivedPrefs == null)
+		if (prefs == null && derivedPrefs == null) {
 			// no preferences found - for performance reasons, short-circuit
 			// lookup by falling back to workspace's default setting
 			return recurse ? ResourcesPlugin.getEncoding() : null;
+		}
 
 		return internalGetCharsetFor(prefs, derivedPrefs, resourcePath, recurse);
 	}
@@ -337,30 +367,34 @@ public class CharsetManager implements IManager {
 	}
 
 	private String internalGetCharsetFor(Preferences prefs, Preferences derivedPrefs, IPath resourcePath, boolean recurse) {
-		String charset = null;
-
-		// try to find the encoding in regular and then derived preferences
-		if (prefs != null)
-			charset = prefs.get(getKeyFor(resourcePath), null);
-		// derivedPrefs may be not null, only if #isDerivedEncodingStoredSeparately returns true
-		// so the explicit check against #isDerivedEncodingStoredSeparately is not required
-		if (charset == null && derivedPrefs != null)
-			charset = derivedPrefs.get(getKeyFor(resourcePath), null);
-
-		if (!recurse)
+		String charset = getCharsetFromPreferences(prefs, derivedPrefs, resourcePath);
+		if (!recurse) {
 			return charset;
+		}
 
 		while (charset == null && resourcePath.segmentCount() > 1) {
 			resourcePath = resourcePath.removeLastSegments(1);
-			// try to find the encoding in regular and then derived preferences
-			if (prefs != null)
-				charset = prefs.get(getKeyFor(resourcePath), null);
-			if (charset == null && derivedPrefs != null)
-				charset = derivedPrefs.get(getKeyFor(resourcePath), null);
+			charset = getCharsetFromPreferences(prefs, derivedPrefs, resourcePath);
 		}
 
 		// ensure we default to the workspace encoding if none is found
 		return charset == null ? ResourcesPlugin.getEncoding() : charset;
+	}
+
+	private String getCharsetFromPreferences(Preferences prefs, Preferences derivedPrefs, IPath resourcePath) {
+		String charset = null;
+		String key = getKeyFor(resourcePath);
+
+		// try to find the encoding in regular and then derived preferences
+		if (prefs != null) {
+			charset = prefs.get(key, null);
+		}
+		// derivedPrefs may be not null, only if #isDerivedEncodingStoredSeparately returns true
+		// so the explicit check against #isDerivedEncodingStoredSeparately is not required
+		if (charset == null && derivedPrefs != null) {
+			charset = derivedPrefs.get(key, null);
+		}
+		return charset;
 	}
 
 	private boolean isDerivedEncodingStoredSeparately(IProject project) {
@@ -422,47 +456,64 @@ public class CharsetManager implements IManager {
 	}
 
 	public void setCharsetFor(IPath resourcePath, String newCharset) throws CoreException {
-		// for the workspace root we just set a preference in the instance scope
-		if (resourcePath.segmentCount() == 0) {
-			IEclipsePreferences resourcesPreferences = InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES);
-			if (newCharset != null)
-				resourcesPreferences.put(ResourcesPlugin.PREF_ENCODING, newCharset);
-			else
-				resourcesPreferences.remove(ResourcesPlugin.PREF_ENCODING);
-			try {
-				resourcesPreferences.flush();
-			} catch (BackingStoreException e) {
-				IProject project = workspace.getRoot().getProject(resourcePath.segment(0));
-				String message = Messages.resources_savingEncoding;
-				throw new ResourceException(IResourceStatus.FAILED_SETTING_CHARSET, project.getFullPath(), message, e);
-			}
-			return;
+		if (IPath.ROOT.equals(resourcePath)) {
+			setCharsetForRoot(newCharset);
+		} else if (workspace.getRoot().findMember(resourcePath) instanceof Resource resource) {
+			setCharsetForResource(resourcePath, newCharset, resource);
 		}
-		// for all other cases, we set a property in the corresponding project
-		IResource resource = workspace.getRoot().findMember(resourcePath);
-		if (resource != null) {
-			try {
-				// disable the listener so we don't react to changes made by ourselves
-				Preferences encodingSettings = getPreferences(resource.getProject(), true, resource.isDerived(IResource.CHECK_ANCESTORS));
-				if (newCharset == null || newCharset.trim().length() == 0)
-					encodingSettings.remove(getKeyFor(resourcePath));
-				else
-					encodingSettings.put(getKeyFor(resourcePath), newCharset);
-				flushPreferences(encodingSettings, true);
-				if (resource instanceof IProject) {
-					IProject project = (IProject) resource;
-					ValidateProjectEncoding.scheduleProjectValidation(workspace, project);
-				}
-			} catch (BackingStoreException e) {
-				IProject project = workspace.getRoot().getProject(resourcePath.segment(0));
-				String message = Messages.resources_savingEncoding;
-				throw new ResourceException(IResourceStatus.FAILED_SETTING_CHARSET, project.getFullPath(), message, e);
-			}
+	}
+
+	private void setCharsetForRoot(String newCharset) throws ResourceException {
+		IEclipsePreferences resourcesPreferences = InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES);
+		if (newCharset != null) {
+			resourcesPreferences.put(ResourcesPlugin.PREF_ENCODING, newCharset);
+		} else {
+			resourcesPreferences.remove(ResourcesPlugin.PREF_ENCODING);
 		}
+
+		try {
+			resourcesPreferences.flush();
+		} catch (BackingStoreException e) {
+			setCharsetForHasFailed(IPath.ROOT, e);
+		}
+	}
+
+	private void setCharsetForResource(IPath resourcePath, String newCharset, IResource resource)
+			throws ResourceException {
+		try {
+			setResourceEncodingSettings(resourcePath, newCharset, resource);
+			if (resource instanceof Project project) {
+				ValidateProjectEncoding.scheduleProjectValidation(workspace, project);
+			}
+		} catch (BackingStoreException e) {
+			setCharsetForHasFailed(resourcePath, e);
+		}
+	}
+
+	private void setResourceEncodingSettings(IPath resourcePath, String newCharset, IResource resource)
+			throws BackingStoreException {
+		// disable the listener so we don't react to changes made by ourselves
+		Preferences encodingSettings = getPreferences(resource.getProject(), true,
+				resource.isDerived(IResource.CHECK_ANCESTORS));
+
+		if (newCharset == null || newCharset.isBlank()) {
+			encodingSettings.remove(getKeyFor(resourcePath));
+		} else {
+			encodingSettings.put(getKeyFor(resourcePath), newCharset);
+		}
+		flushPreferences(encodingSettings, true);
+	}
+
+	private void setCharsetForHasFailed(IPath resourcePath, BackingStoreException e) throws ResourceException {
+		String message = Messages.resources_savingEncoding;
+		throw new ResourceException(IResourceStatus.FAILED_SETTING_CHARSET, resourcePath, message, e);
 	}
 
 	@Override
 	public void shutdown(IProgressMonitor monitor) {
+		if (job != null) {
+			job.shutDown();
+		}
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES)
 				.removePreferenceChangeListener(preferenceChangeListener);
 

@@ -43,7 +43,6 @@ import org.eclipse.core.runtime.IConfigurationElement;
 import org.eclipse.core.runtime.IContributor;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Preferences;
 import org.eclipse.core.runtime.Preferences.IPropertyChangeListener;
@@ -82,7 +81,7 @@ import org.osgi.util.tracker.ServiceTracker;
 public class AntCorePreferences implements IPropertyChangeListener {
 
 	static class WrappedClassLoader extends ClassLoader {
-		private Bundle bundle;
+		private final Bundle bundle;
 
 		public WrappedClassLoader(Bundle bundle) {
 			super();
@@ -138,7 +137,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 		}
 	}
 
-	private IPreferenceChangeListener prefListener = event -> {
+	private final IPreferenceChangeListener prefListener = event -> {
 		String property = event.getKey();
 		if (property.equals(IAntCoreConstants.PREFERENCE_TASKS) || property.startsWith(IAntCoreConstants.PREFIX_TASK)) {
 			restoreTasks();
@@ -157,9 +156,9 @@ public class AntCorePreferences implements IPropertyChangeListener {
 		}
 	};
 
-	private List<Task> defaultTasks;
-	private List<Type> defaultTypes;
-	private List<AntClasspathEntry> extraClasspathURLs;
+	private final List<Task> defaultTasks;
+	private final List<Type> defaultTypes;
+	private final List<AntClasspathEntry> extraClasspathURLs;
 	private List<Property> defaultProperties;
 	private IAntClasspathEntry[] defaultAntHomeEntries;
 
@@ -347,7 +346,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 		IAntClasspathEntry[] entries = getDefaultAntHomeEntries();
 		if (entries.length > 0) {
 			URL antjar = entries[entries.length - 1].getEntryURL();
-			IPath antHomePath = new Path(antjar.getFile());
+			IPath antHomePath = IPath.fromOSString(antjar.getFile());
 			// parent directory of the lib directory
 			antHomePath = antHomePath.removeLastSegments(2);
 			return antHomePath.toFile().getAbsolutePath();
@@ -674,10 +673,6 @@ public class AntCorePreferences implements IPropertyChangeListener {
 	/**
 	 * Configures the given {@link AntObject} and returns if it should be retained
 	 *
-	 * @param element
-	 * @param antObject
-	 * @param objectName
-	 * @param errorMessage
 	 * @return <code>true</code> if the object configured and should be retained, <code>false</code> otherwise
 	 */
 	private boolean configureAntObject(IConfigurationElement element, AntObject antObject, String objectName, String errorMessage) {
@@ -865,7 +860,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 	 */
 	@Deprecated
 	public URL getToolsJarURL() {
-		IPath path = new Path(System.getProperty("java.home")); //$NON-NLS-1$
+		IPath path = IPath.fromOSString(System.getProperty("java.home")); //$NON-NLS-1$
 		IAntClasspathEntry entry = getToolsJarEntry(path);
 		if (entry == null) {
 			IDynamicVariable variable = VariablesPlugin.getDefault().getStringVariableManager().getDynamicVariable("env_var"); //$NON-NLS-1$
@@ -875,7 +870,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 					javaHome = variable.getValue("JAVA_HOME"); //$NON-NLS-1$
 				}
 				if (javaHome != null) {
-					path = new Path(javaHome);
+					path = IPath.fromOSString(javaHome);
 					entry = getToolsJarEntry(path);
 				}
 			}
@@ -897,7 +892,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 	 * @return IAntClasspathEntry tools.jar IAntClasspathEntry or <code>null</code>
 	 */
 	public IAntClasspathEntry getToolsJarEntry() {
-		IPath path = new Path(System.getProperty("java.home")); //$NON-NLS-1$
+		IPath path = IPath.fromOSString(System.getProperty("java.home")); //$NON-NLS-1$
 		IAntClasspathEntry entry = getToolsJarEntry(path);
 		if (entry == null) {
 			IDynamicVariable variable = VariablesPlugin.getDefault().getStringVariableManager().getDynamicVariable("env_var"); //$NON-NLS-1$
@@ -907,7 +902,7 @@ public class AntCorePreferences implements IPropertyChangeListener {
 					javaHome = variable.getValue("JAVA_HOME"); //$NON-NLS-1$
 				}
 				if (javaHome != null) {
-					path = new Path(javaHome);
+					path = IPath.fromOSString(javaHome);
 					entry = getToolsJarEntry(path);
 				}
 			}
@@ -975,11 +970,6 @@ public class AntCorePreferences implements IPropertyChangeListener {
 
 	/**
 	 * Add the libraries contributed by the Ant plug-in, to the classpath.
-	 *
-	 * @param source
-	 * @param destination
-	 * @throws IOException
-	 * @throws MalformedURLException
 	 */
 	private void addLibraries(Bundle source, List<AntClasspathEntry> destination) throws IOException, MalformedURLException {
 		ManifestElement[] libraries = null;

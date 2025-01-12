@@ -17,10 +17,22 @@ package org.eclipse.core.internal.resources;
 
 import java.util.LinkedList;
 import java.util.Queue;
-import org.eclipse.core.internal.utils.*;
-import org.eclipse.core.internal.watson.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.internal.utils.Policy;
+import org.eclipse.core.internal.utils.WrappedRuntimeException;
+import org.eclipse.core.internal.watson.ElementTreeIterator;
+import org.eclipse.core.internal.watson.IElementContentVisitor;
+import org.eclipse.core.internal.watson.IPathRequestor;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.content.IContentTypeManager;
 import org.eclipse.core.runtime.content.IContentTypeManager.ContentTypeChangeEvent;
 import org.eclipse.core.runtime.jobs.Job;
@@ -52,10 +64,10 @@ public class CharsetDeltaJob extends Job implements IContentTypeManager.IContent
 		boolean isAffected(ResourceInfo info, IPathRequestor requestor);
 	}
 
-	private ThreadLocal<Boolean> disabled = new ThreadLocal<>();
+	private final ThreadLocal<Boolean> disabled = new ThreadLocal<>();
 
 	private final Bundle systemBundle = Platform.getBundle("org.eclipse.osgi"); //$NON-NLS-1$
-	private Queue<ICharsetListenerFilter> work = new LinkedList<>();
+	private final Queue<ICharsetListenerFilter> work = new LinkedList<>();
 
 	Workspace workspace;
 
@@ -64,6 +76,7 @@ public class CharsetDeltaJob extends Job implements IContentTypeManager.IContent
 	public CharsetDeltaJob(Workspace workspace) {
 		super(Messages.resources_charsetBroadcasting);
 		this.workspace = workspace;
+		setRule(workspace.getRoot()); // make sure workspace.prepareOperation() does not block
 	}
 
 	private void addToQueue(ICharsetListenerFilter filter) {
@@ -128,7 +141,7 @@ public class CharsetDeltaJob extends Job implements IContentTypeManager.IContent
 			@Override
 			public IPath getRoot() {
 				// visit all resources in the workspace
-				return Path.ROOT;
+				return IPath.ROOT;
 			}
 
 			@Override
@@ -216,10 +229,23 @@ public class CharsetDeltaJob extends Job implements IContentTypeManager.IContent
 	 */
 	public void setDisabled(boolean disabled) {
 		// using a thread local because this can be called by multiple threads concurrently
-		this.disabled.set(disabled ? Boolean.TRUE : null);
+		if (disabled) {
+			this.disabled.set(Boolean.TRUE);
+		} else {
+			this.disabled.remove();
+		}
 	}
 
 	public void shutdown() {
+		try {
+			// try to prevent execution of this job to avoid "already shutdown.":
+			cancel();
+			wakeUp();
+			// if job is already running wait for it to finish:
+			join(3000, null);
+		} catch (InterruptedException e) {
+			// ignore
+		}
 		IContentTypeManager contentTypeManager = Platform.getContentTypeManager();
 		//if the service is already gone there is nothing to do
 		if (contentTypeManager != null)

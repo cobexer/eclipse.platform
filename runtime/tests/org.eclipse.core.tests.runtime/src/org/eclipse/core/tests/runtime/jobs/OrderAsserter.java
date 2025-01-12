@@ -24,9 +24,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import org.eclipse.core.tests.harness.TestBarrier2;
 
-/**
- *
- */
 public class OrderAsserter {
 	public class Event {
 		final String name;
@@ -71,7 +68,6 @@ public class OrderAsserter {
 	volatile Exception potentialDeadlock;
 
 	public void expect(Event event, long waitMs) {
-		System.out.println(event + " happend in Thread '" + Thread.currentThread().getName() + "'");
 		if (!errors.isEmpty()) {
 			return;
 		}

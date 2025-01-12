@@ -17,22 +17,55 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.io.*;
-import java.util.*;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.internal.events.ILifecycleListener;
 import org.eclipse.core.internal.events.LifecycleEvent;
-import org.eclipse.core.internal.utils.*;
+import org.eclipse.core.internal.utils.Cache;
+import org.eclipse.core.internal.utils.Cache.Entry;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.internal.utils.Policy;
 import org.eclipse.core.internal.watson.ElementTreeIterator;
 import org.eclipse.core.internal.watson.IElementContentVisitor;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.content.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IExtensionRegistry;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IRegistryChangeEvent;
+import org.eclipse.core.runtime.IRegistryChangeListener;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.content.IContentDescription;
+import org.eclipse.core.runtime.content.IContentType;
+import org.eclipse.core.runtime.content.IContentTypeManager;
 import org.eclipse.core.runtime.content.IContentTypeManager.ContentTypeChangeEvent;
+import org.eclipse.core.runtime.content.IContentTypeMatcher;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.osgi.util.NLS;
 import org.osgi.framework.Bundle;
+import org.osgi.framework.BundleContext;
 
 /**
  * Keeps a cache of recently read content descriptions.
@@ -41,6 +74,7 @@ import org.osgi.framework.Bundle;
  * @see IFile#getContentDescription()
  */
 public class ContentDescriptionManager implements IManager, IRegistryChangeListener, IContentTypeManager.IContentTypeChangeListener, ILifecycleListener {
+
 	/**
 	 * This job causes the content description cache and the related flags
 	 * in the resource tree to be flushed.
@@ -111,7 +145,8 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		 */
 		void flush(IProject project) {
 			if (Policy.DEBUG_CONTENT_TYPE_CACHE)
-				Policy.debug("Scheduling flushing of content type cache for " + (project == null ? Path.ROOT : project.getFullPath())); //$NON-NLS-1$
+				Policy.debug("Scheduling flushing of content type cache for " //$NON-NLS-1$
+						+ (project == null ? IPath.ROOT : project.getFullPath()));
 			synchronized (toFlush) {
 				if (!fullFlush)
 					if (project == null)
@@ -130,7 +165,7 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 	 */
 	static class LazyFileInputStream extends InputStream {
 		private InputStream actual;
-		private IFileStore target;
+		private final IFileStore target;
 
 		LazyFileInputStream(IFileStore target) {
 			this.target = target;
@@ -201,7 +236,7 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 
 	private static final String PT_CONTENTTYPES = "contentTypes"; //$NON-NLS-1$
 
-	private Cache cache;
+	private final Cache<IPath, IContentDescription> cache = new Cache<>();
 
 	private volatile byte cacheState;
 
@@ -235,11 +270,11 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		try {
 			setCacheState(FLUSHING_CACHE);
 			// flush the MRU cache
-			cache.discardAll();
+			cache.clear();
 			SubMonitor subMonitor = SubMonitor.convert(monitor);
 			if (toClean.isEmpty()) {
 				// no project was added, must be a global flush
-				clearContentFlags(Path.ROOT, subMonitor.split(1));
+				clearContentFlags(IPath.ROOT, subMonitor.split(1));
 			} else {
 				subMonitor.setWorkRemaining(toClean.size());
 				// flush a project at a time
@@ -283,10 +318,6 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 			Policy.debug("Content type cache for " + root + " flushed in " + (System.currentTimeMillis() - flushStart) + " ms"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	}
 
-	Cache getCache() {
-		return cache;
-	}
-
 	/** Public so tests can examine it. */
 	public byte getCacheState() {
 		if (cacheState != 0) {
@@ -312,14 +343,6 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		return cacheState;
 	}
 
-	public long getCacheTimestamp() throws CoreException {
-		try {
-			return Long.parseLong(workspace.getRoot().getPersistentProperty(CACHE_TIMESTAMP));
-		} catch (NumberFormatException e) {
-			return 0;
-		}
-	}
-
 	public IContentTypeMatcher getContentTypeMatcher(Project project) throws CoreException {
 		return projectContentTypes.getMatcherFor(project);
 	}
@@ -330,7 +353,6 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 	 * @param info ResourceInfo for the passed in file
 	 * @param inSync boolean flag which indicates if cache can be trusted. If false false don't trust the cache
 	 * @return IContentDescription for the file
-	 * @throws CoreException
 	 */
 	public IContentDescription getDescriptionFor(File file, ResourceInfo info, boolean inSync) throws CoreException {
 		if (ProjectContentTypes.usesContentTypePreferences(file.getFullPath().segment(0)))
@@ -339,16 +361,14 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		if (getCacheState() == INVALID_CACHE) {
 			// discard the cache, so it can be used before the flush job starts
 			setCacheState(ABOUT_TO_FLUSH);
-			cache.discardAll();
+			cache.clear();
 			// the cache is not good, flush it
 			flushJob.schedule(1000);
 		}
 		if (inSync && getCacheState() != ABOUT_TO_FLUSH) {
 			// first look for the flags in the resource info to avoid looking in the cache
 			// don't need to copy the info because the modified bits are not in the deltas
-			if (info == null)
-				return null;
-			if (info.isSet(ICoreConstants.M_NO_CONTENT_DESCRIPTION))
+			if ((info == null) || info.isSet(ICoreConstants.M_NO_CONTENT_DESCRIPTION))
 				// presumably, this file has no known content type
 				return null;
 			if (info.isSet(ICoreConstants.M_DEFAULT_CONTENT_DESCRIPTION)) {
@@ -367,10 +387,10 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		if (inSync) {
 			// tries to get a description from the cache
 			synchronized (this) {
-				Cache.Entry entry = cache.getEntry(file.getFullPath());
+				Entry<IContentDescription> entry = cache.getEntry(file.getFullPath());
 				if (entry != null && entry.getTimestamp() == getTimestamp(info))
 					// there was a description in the cache, and it was up to date
-					return (IContentDescription) entry.getCached();
+					return entry.getCached();
 			}
 		}
 
@@ -380,10 +400,10 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 
 		synchronized (this) {
 			// tries to get a description from the cache
-			Cache.Entry entry = cache.getEntry(file.getFullPath());
+			Entry<IContentDescription> entry = cache.getEntry(file.getFullPath());
 			if (entry != null && inSync && entry.getTimestamp() == getTimestamp(info))
 				// there was a description in the cache, and it was up to date
-				return (IContentDescription) entry.getCached();
+				return entry.getCached();
 
 			if (getCacheState() != ABOUT_TO_FLUSH) {
 				// we are going to add an entry to the cache or update the resource info - remember that
@@ -404,14 +424,7 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 				}
 			}
 			// we actually got a description filled by a describer (or a default description for a non-obvious type)
-			if (entry == null)
-				// there was no entry before - create one
-				entry = cache.addEntry(file.getFullPath(), newDescription, getTimestamp(info));
-			else {
-				// just update the existing entry
-				entry.setTimestamp(getTimestamp(info));
-				entry.setCached(newDescription);
-			}
+			entry = cache.addEntry(file.getFullPath(), newDescription, getTimestamp(info));
 			return newDescription;
 		}
 	}
@@ -442,17 +455,49 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 			Policy.log(e.getStatus());
 		}
 		if (Policy.DEBUG_CONTENT_TYPE_CACHE)
-			Policy.debug("Invalidated cache for " + (project == null ? Path.ROOT : project.getFullPath())); //$NON-NLS-1$
+			Policy.debug("Invalidated cache for " + (project == null ? IPath.ROOT : project.getFullPath())); //$NON-NLS-1$
 		if (flush) {
 			try {
 				// discard the cache, so it can be used before the flush job starts
 				setCacheState(ABOUT_TO_FLUSH);
-				cache.discardAll();
+				cache.clear();
 			} catch (CoreException e) {
 				Policy.log(e.getStatus());
 			}
 			// the cache is not good, flush it
 			flushJob.flush(project);
+		}
+	}
+
+	private static String getCurrentPlatformState() {
+		ResourcesPlugin plugin = ResourcesPlugin.getPlugin();
+		if (plugin == null) {
+			return ""; //$NON-NLS-1$
+		}
+		BundleContext bundleContext = plugin.getBundle().getBundleContext();
+		if (bundleContext == null) {
+			return ""; //$NON-NLS-1$
+		}
+		String ID = Arrays.stream(bundleContext.getBundles())
+				.map(bundle -> String.format("%d %s %s", bundle.getBundleId(), bundle.getSymbolicName(), //$NON-NLS-1$
+						bundle.getVersion()))
+				.sorted().collect(Collectors.joining(System.lineSeparator()));
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256"); //$NON-NLS-1$
+			return HexFormat.of().formatHex(digest.digest(ID.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException e) {
+			return Integer.toHexString(ID.hashCode());
+		}
+	}
+
+	/**
+	 * @return the cached platform state, only public for testing purpose!
+	 */
+	private String getCachedPlatformState() {
+		try {
+			return Objects.requireNonNullElse(workspace.getRoot().getPersistentProperty(CACHE_TIMESTAMP), ""); //$NON-NLS-1$
+		} catch (CoreException e) {
+			return e.toString();
 		}
 	}
 
@@ -512,15 +557,11 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		cacheState = newCacheState;
 	}
 
-	private void setCacheTimeStamp(long timeStamp) throws CoreException {
-		workspace.getRoot().setPersistentProperty(CACHE_TIMESTAMP, Long.toString(timeStamp));
-	}
-
 	@Override
 	public void shutdown(IProgressMonitor monitor) throws CoreException {
-		if (getCacheState() != INVALID_CACHE)
-			// remember the platform timestamp for which we have a valid cache
-			setCacheTimeStamp(Platform.getStateStamp());
+		if (getCacheState() != INVALID_CACHE) {
+			workspace.getRoot().setPersistentProperty(CACHE_TIMESTAMP, getCurrentPlatformState());
+		}
 		IContentTypeManager contentTypeManager = Platform.getContentTypeManager();
 		//tolerate missing services during shutdown because they might be already gone
 		if (contentTypeManager != null)
@@ -528,8 +569,7 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 		IExtensionRegistry registry = Platform.getExtensionRegistry();
 		if (registry != null)
 			registry.removeRegistryChangeListener(this);
-		cache.dispose();
-		cache = null;
+		cache.clear();
 		flushJob.cancel();
 		flushJob = null;
 		projectContentTypes = null;
@@ -537,7 +577,6 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 
 	@Override
 	public void startup(IProgressMonitor monitor) throws CoreException {
-		cache = new Cache(100, 1000, 0.1);
 		projectContentTypes = new ProjectContentTypes(workspace);
 		getCacheState();
 		if (cacheState == FLUSHING_CACHE || cacheState == ABOUT_TO_FLUSH)
@@ -545,8 +584,9 @@ public class ContentDescriptionManager implements IManager, IRegistryChangeListe
 			setCacheState(INVALID_CACHE);
 		flushJob = new FlushJob(workspace);
 		// the cache is stale (plug-ins that might be contributing content types were added/removed)
-		if (getCacheTimestamp() != Platform.getStateStamp())
+		if (!Objects.equals(getCachedPlatformState(), getCurrentPlatformState())) {
 			invalidateCache(false, null);
+		}
 		// register a lifecycle listener
 		workspace.addLifecycleListener(this);
 		// register a content type change listener

@@ -176,7 +176,7 @@ public class ComputeProjectOrder {
 		 */
 		private boolean cycles = false;
 
-		private Class<T> clazz;
+		private final Class<T> clazz;
 
 		/**
 		 * Creates a new empty directed graph object.
@@ -680,9 +680,7 @@ public class ComputeProjectOrder {
 	 * Complexity is O(#edge + #vertex). It implements a dynamic recursive deep-first graph traversing algorithm to compute
 	 * resutling edges.
 	 *
-	 * @param initialGraph
 	 * @param filterOut a filter to exclude nodes.
-	 * @param clazz
 	 * @return the filtered graph.
 	 */
 	public static <T> Digraph<T> buildFilteredDigraph(Digraph<T> initialGraph, Predicate<T> filterOut, Class<T> clazz) {
@@ -698,9 +696,9 @@ public class ComputeProjectOrder {
 		// so that if initial graph has A->B and B->C and B->D and B is removed, this function return C and D
 		// when invoked on A.
 		Function<T, Set<T>> computeAdjacents = new Function<>() {
-			private Set<T> processing = new HashSet<>();
+			private final Set<T> processing = new HashSet<>();
 			// Store intermediary results to not repeat same computations with the same expected results
-			private Map<T, Set<T>> adjacentsMap = new HashMap<>(initialGraph.vertexList.size(), 1.f);
+			private final Map<T, Set<T>> adjacentsMap = new HashMap<>(initialGraph.vertexList.size(), 1.f);
 
 			@Override
 			public Set<T> apply(T id) {
