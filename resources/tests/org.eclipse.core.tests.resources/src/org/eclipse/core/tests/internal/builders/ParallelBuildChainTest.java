@@ -13,360 +13,518 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.builders;
 
-import java.util.*;
-import org.eclipse.core.internal.events.BuildCommand;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.setAutoBuilding;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.updateProjectDescription;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.waitForBuild;
+import static org.eclipse.core.tests.resources.TestUtil.waitForCondition;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.eclipse.core.resources.IBuildConfiguration;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IWorkspaceDescription;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.jobs.JobGroup;
 import org.eclipse.core.tests.harness.TestBarrier2;
 import org.eclipse.core.tests.internal.builders.TimerBuilder.RuleType;
-import org.junit.Assert;
-import org.junit.Test;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class ParallelBuildChainTest extends AbstractBuilderTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class ParallelBuildChainTest {
+	private static final int TIMEOUT_IN_MILLIS = 30_000;
 
-	private static final int LONG_BUILD_DURATION = 1000;
+	private static enum BuildDurationType {
+		/*
+		 * Immediately finishing build
+		 */
+		IMMEDIATE,
 
-	public ParallelBuildChainTest(String name) {
-		super(name);
+		/**
+		 * Short running build
+		 */
+		SHORT_RUNNING,
+
+		/**
+		 * Long running build (will usually not end during test run)
+		 */
+		LONG_RUNNING;
+
+		public int getDurationInMillis() {
+			switch (this) {
+			case LONG_RUNNING:
+				return 40_000;
+			case SHORT_RUNNING:
+				return 300;
+			case IMMEDIATE:
+			default:
+				return 0;
+			}
+		}
+
+		@Override
+		public String toString() {
+			switch (this) {
+			case IMMEDIATE:
+				return "immediateBuild";
+			case LONG_RUNNING:
+				return "longRunningBuild";
+			case SHORT_RUNNING:
+				return "shortRunningBuild";
+			}
+			throw new UnsupportedOperationException();
+		}
+
 	}
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		IWorkspaceDescription description = getWorkspace().getDescription();
-		description.setMaxConcurrentBuilds(3);
-		getWorkspace().setDescription(description);
+	@BeforeEach
+	public void setUp() throws Exception {
 		setAutoBuilding(false);
-		TimerBuilder.reset();
+	}
+
+	@AfterEach
+	public void tearDown() throws Exception {
+		// Cleanup workspace first to ensure that auto-build is not started on projects
+		waitForBuild();
+		getWorkspace().getRoot().delete(true, true, createTestMonitor());
+		TimerBuilder.abortCurrentBuilds();
+	}
+
+	private void setWorkspaceMaxNumberOfConcurrentBuilds(int maximumNumberOfConcurrentBuilds) throws CoreException {
+		IWorkspaceDescription description = getWorkspace().getDescription();
+		description.setMaxConcurrentBuilds(maximumNumberOfConcurrentBuilds);
+		getWorkspace().setDescription(description);
+	}
+
+	@Test
+	public void testIndividualProjectBuilds_NoConflictRule() throws Exception {
+		int numberOfParallelBuilds = 3;
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.NO_CONFLICT);
+		var longRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.LONG_RUNNING,
+				RuleType.NO_CONFLICT);
+		executeIndividualFullProjectBuilds(numberOfParallelBuilds, () -> {
+			assertBuildsToStart(getAllProjects());
+			assertMinimumNumberOfSimultaneousBuilds(longRunningProjects.size());
+		});
+	}
+
+	@Test
+	public void testIndividualProjectBuilds_ProjectRelaxedRule() throws Exception {
+		int numberOfParallelBuilds = 3;
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE,
+				RuleType.CURRENT_PROJECT_RELAXED);
+		var longRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.LONG_RUNNING,
+				RuleType.CURRENT_PROJECT_RELAXED);
+		executeIndividualFullProjectBuilds(numberOfParallelBuilds, () -> {
+			assertBuildsToStart(getAllProjects());
+			assertMinimumNumberOfSimultaneousBuilds(longRunningProjects.size());
+		});
+	}
+
+	@Test
+	public void testIndividualProjectBuilds_WithManyProjects_ProjectRelaxedRule() throws Exception {
+		int numberOfParallelBuilds = 15;
+		var longRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.LONG_RUNNING,
+				RuleType.CURRENT_PROJECT_RELAXED);
+		executeIndividualFullProjectBuilds(numberOfParallelBuilds, () -> {
+			assertBuildsToStart(getAllProjects());
+			assertMinimumNumberOfSimultaneousBuilds(longRunningProjects.size());
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_NoConflictRule() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.NO_CONFLICT);
+		var longRunningBuildProjects = createMultipleTestProjects(numberOfParallelBuilds,
+				BuildDurationType.LONG_RUNNING, RuleType.NO_CONFLICT);
+		executeIncrementalWorkspaceBuild(() -> {
+			assertBuildsToStart(longRunningBuildProjects);
+			assertMinimumNumberOfSimultaneousBuilds(longRunningBuildProjects.size());
+			assertMaximumNumberOfConcurrentWorkspaceBuilds();
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_NoConflictRule_WithBuildConfigurations() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.NO_CONFLICT);
+		var longRunningBuildProjects = createMultipleTestProjects(numberOfParallelBuilds,
+				BuildDurationType.LONG_RUNNING, RuleType.NO_CONFLICT);
+		IBuildConfiguration[] buildConfigurations = getBuildConfigurations(getAllProjects());
+		executeIncrementalWorkspaceBuild(buildConfigurations, () -> {
+			assertBuildsToStart(longRunningBuildProjects);
+			assertMinimumNumberOfSimultaneousBuilds(longRunningBuildProjects.size());
+			assertMaximumNumberOfConcurrentWorkspaceBuilds();
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_ProjectRule() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.CURRENT_PROJECT);
+		var longRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.LONG_RUNNING,
+				RuleType.CURRENT_PROJECT);
+		executeIncrementalWorkspaceBuild(() -> {
+			assertBuildsToStart(longRunningProjects);
+			assertMinimumNumberOfSimultaneousBuilds(longRunningProjects.size());
+			assertMaximumNumberOfConcurrentWorkspaceBuilds();
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_ProjectRule_WithBuildConfigurations() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.CURRENT_PROJECT);
+		var longRunningBuildProjects = createMultipleTestProjects(numberOfParallelBuilds,
+				BuildDurationType.LONG_RUNNING,
+				RuleType.CURRENT_PROJECT);
+		IBuildConfiguration[] buildConfigurations = getBuildConfigurations(getAllProjects());
+		executeIncrementalWorkspaceBuild(buildConfigurations, () -> {
+			assertBuildsToStart(longRunningBuildProjects);
+			assertMinimumNumberOfSimultaneousBuilds(longRunningBuildProjects.size());
+			assertMaximumNumberOfConcurrentWorkspaceBuilds();
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_ConflictingRule() throws Exception {
+		int millisToWaitForUnexpectedParallelBuild = 3_000;
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		var longRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.LONG_RUNNING,
+				RuleType.WORKSPACE_ROOT);
+		executeIncrementalWorkspaceBuild(() -> {
+			waitForCondition(() -> TimerBuilder.getStartedProjectBuilds().size() > 1,
+					millisToWaitForUnexpectedParallelBuild);
+			assertThat(longRunningProjects).withFailMessage(
+					"all build jobs have started in time although infinitely running builds with conflicting rules exist")
+					.anySatisfy(longRunningProject -> assertThat(TimerBuilder.getStartedProjectBuilds())
+							.doesNotContain(longRunningProject));
+			assertMaximumNumberOfSimultaneousBuilds(1);
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_DependentProjects() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.NO_CONFLICT);
+		var shortRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.SHORT_RUNNING,
+				RuleType.NO_CONFLICT);
+		var projectsToBuild = getAllProjects();
+		makeProjectsDependOnEachOther(projectsToBuild);
+		int minimumExecutionTimeInMillis = shortRunningProjects.size()
+				* BuildDurationType.SHORT_RUNNING.getDurationInMillis();
+		ExpectedExecutionTime expectedExecutionTime = ExpectedExecutionTime
+				.captureFromCurrentTime(minimumExecutionTimeInMillis);
+		executeIncrementalWorkspaceBuild(() -> {
+			assertBuildsToFinish(projectsToBuild);
+			expectedExecutionTime.assertMinimumExecutionTimeReached();
+			assertMaximumNumberOfSimultaneousBuilds(1);
+			assertSequentialBuildEventsForProjects(projectsToBuild);
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_DependentProjects_ProjectSubset() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		var immediateBuiltProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE,
+				RuleType.NO_CONFLICT);
+		var shortRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.SHORT_RUNNING,
+				RuleType.NO_CONFLICT);
+		var projectsToBuild = List.of(immediateBuiltProjects.get(0),
+				immediateBuiltProjects.get(immediateBuiltProjects.size() - 1), shortRunningProjects.get(0),
+				shortRunningProjects.get(shortRunningProjects.size() - 1));
+		makeProjectsDependOnEachOther(projectsToBuild);
+		IBuildConfiguration[] selectedBuildConfigurations = getBuildConfigurations(projectsToBuild);
+		int minimumExecutionTimeInMillis = 2 * BuildDurationType.SHORT_RUNNING.getDurationInMillis();
+		ExpectedExecutionTime expectedExecutionTime = ExpectedExecutionTime
+				.captureFromCurrentTime(minimumExecutionTimeInMillis);
+		executeIncrementalWorkspaceBuild(selectedBuildConfigurations, () -> {
+			assertBuildsToFinish(projectsToBuild);
+			expectedExecutionTime.assertMinimumExecutionTimeReached();
+			assertMaximumNumberOfSimultaneousBuilds(1);
+			assertSequentialBuildEventsForProjects(projectsToBuild);
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_DependentProjectBuildConfigurations() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE, RuleType.NO_CONFLICT);
+		var shortRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.SHORT_RUNNING,
+				RuleType.NO_CONFLICT);
+		var projectsToBuild = getAllProjects();
+		makeProjectBuildConfigurationsDependOnEachOther(projectsToBuild);
+		int minimumExecutionTimeInMillis = shortRunningProjects.size()
+				* BuildDurationType.SHORT_RUNNING.getDurationInMillis();
+		ExpectedExecutionTime expectedExecutionTime = ExpectedExecutionTime
+				.captureFromCurrentTime(minimumExecutionTimeInMillis);
+		executeIncrementalWorkspaceBuild(() -> {
+			assertBuildsToFinish(projectsToBuild);
+			expectedExecutionTime.assertMinimumExecutionTimeReached();
+			assertMaximumNumberOfSimultaneousBuilds(1);
+			assertSequentialBuildEventsForProjects(projectsToBuild);
+		});
+	}
+
+	@Test
+	public void testWorkspaceBuild_DependentProjectBuildConfigurations_ProjectSubset() throws Exception {
+		int numberOfParallelBuilds = 3;
+		setWorkspaceMaxNumberOfConcurrentBuilds(numberOfParallelBuilds);
+		var immediateBuiltProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.IMMEDIATE,
+				RuleType.NO_CONFLICT);
+		var shortRunningProjects = createMultipleTestProjects(numberOfParallelBuilds, BuildDurationType.SHORT_RUNNING,
+				RuleType.NO_CONFLICT);
+		var projectsToBuild = List.of(immediateBuiltProjects.get(0),
+				immediateBuiltProjects.get(immediateBuiltProjects.size() - 1), shortRunningProjects.get(0),
+				shortRunningProjects.get(shortRunningProjects.size() - 1));
+		makeProjectBuildConfigurationsDependOnEachOther(getAllProjects());
+		IBuildConfiguration[] selectedBuildConfigurations = getBuildConfigurations(projectsToBuild);
+		int minimumExecutionTimeInMillis = 2 * BuildDurationType.SHORT_RUNNING.getDurationInMillis();
+		ExpectedExecutionTime expectedExecutionTime = ExpectedExecutionTime
+				.captureFromCurrentTime(minimumExecutionTimeInMillis);
+		executeIncrementalWorkspaceBuild(selectedBuildConfigurations, () -> {
+			assertBuildsToFinish(projectsToBuild);
+			expectedExecutionTime.assertMinimumExecutionTimeReached();
+			assertMaximumNumberOfSimultaneousBuilds(1);
+			assertSequentialBuildEventsForProjects(projectsToBuild);
+		});
+	}
+
+	private List<IProject> getAllProjects() {
+		return Arrays.asList(getWorkspace().getRoot().getProjects());
+	}
+
+	private static IBuildConfiguration[] getBuildConfigurations(List<IProject> projects) throws CoreException {
+		IBuildConfiguration[] buildConfigurations = new IBuildConfiguration[projects.size()];
+		for (int projectNumber = 0; projectNumber < projects.size(); projectNumber++) {
+			buildConfigurations[projectNumber] = projects.get(projectNumber).getActiveBuildConfig();
+		}
+		return buildConfigurations;
+	}
+
+	private List<IProject> createMultipleTestProjects(int numberOfProjects, BuildDurationType buildDurationType,
+			RuleType ruleType)
+			throws CoreException {
+		List<IProject> result = new ArrayList<>();
+		for (int projectNumber = 0; projectNumber < numberOfProjects; projectNumber++) {
+			result.add(createTestProject(buildDurationType, ruleType));
+		}
+		return result;
+	}
+
+	private IProject createTestProject(BuildDurationType buildDurationType, RuleType ruleType) throws CoreException {
+		String projectName = createUniqueProjectName(buildDurationType.toString());
 		IWorkspaceRoot root = getWorkspace().getRoot();
-		IProject projectInstantaneousBuild1 = root.getProject("projectInstantaneousBuild1");
-		IProject projectLongBuild1 = root.getProject("projectLongBuild1");
-		IProject projectInstantaneousBuild2 = root.getProject("projectInstantaneousBuild2");
-		IProject projectLongBuild2 = root.getProject("projectLongBuild2");
-		IProject projectInstantaneousBuild3 = root.getProject("projectInstantaneousBuild3");
-		IProject projectLongBuild3 = root.getProject("projectLongBuild3");
-		ensureExistsInWorkspace(new IResource[] {projectInstantaneousBuild1, projectInstantaneousBuild2, projectInstantaneousBuild3, projectLongBuild1, projectLongBuild2, projectLongBuild3}, true);
-		configureTimerBuilder(projectInstantaneousBuild1, 0);
-		configureTimerBuilder(projectInstantaneousBuild2, 0);
-		configureTimerBuilder(projectInstantaneousBuild3, 0);
-		configureTimerBuilder(projectLongBuild1, LONG_BUILD_DURATION);
-		configureTimerBuilder(projectLongBuild2, LONG_BUILD_DURATION);
-		configureTimerBuilder(projectLongBuild3, LONG_BUILD_DURATION);
+		IProject project = root.getProject(projectName);
+		createInWorkspace(project);
+		configureTimerBuilder(project, buildDurationType.getDurationInMillis(), ruleType);
+		return project;
 	}
 
-	private void configureTimerBuilder(IProject project, int duration) throws CoreException {
-		BuildCommand buildCommand = new BuildCommand();
-		buildCommand.setBuilderName(TimerBuilder.BUILDER_NAME);
-		Map<String, String> arguments = new HashMap<>(2, (float) 1.);
-		arguments.put(TimerBuilder.DURATION_ARG, Integer.toString(duration));
-		arguments.put(TimerBuilder.RULE_TYPE_ARG, TimerBuilder.RuleType.NO_CONFLICT.toString());
-		buildCommand.setArguments(arguments);
-		IProjectDescription projectDescription = project.getDescription();
-		projectDescription.setBuildSpec(new ICommand[] {buildCommand});
-		project.setDescription(projectDescription, getMonitor());
+	private String createUniqueProjectName(String projectPrefix) {
+		int suffix = 0;
+		IWorkspaceRoot root = getWorkspace().getRoot();
+		while (root.getProject(projectPrefix + "Project" + suffix).exists()) {
+			suffix++;
+		}
+		return projectPrefix + "Project" + suffix;
 	}
 
-	public IProject[] projectWithLongRunningBuilds() {
-		return Arrays.stream(getWorkspace().getRoot().getProjects()).filter(project -> {
-			ICommand[] commands;
-			try {
-				commands = project.getDescription().getBuildSpec();
-				return commands.length > 0 && commands[0].getBuilderName().equals(TimerBuilder.BUILDER_NAME)
-						&& Integer.parseInt(commands[0].getArguments().get(TimerBuilder.DURATION_ARG)) > 0;
-			} catch (CoreException e) {
-				fail(e.getMessage(), e);
-				return false;
-			}
-		}).toArray(IProject[]::new);
+	private void configureTimerBuilder(IProject project, int duration, RuleType ruleType) throws CoreException {
+		updateProjectDescription(project).addingCommand(TimerBuilder.BUILDER_NAME)
+				.withAdditionalBuildArgument(TimerBuilder.DURATION_ARG, Integer.toString(duration))
+				.withAdditionalBuildArgument(TimerBuilder.RULE_TYPE_ARG, ruleType.toString()).apply();
 	}
 
-	private void setTimerBuilderSchedulingRuleForAllProjects(TimerBuilder.RuleType type, IProgressMonitor monitor) throws CoreException {
-		for (IProject project : getWorkspace().getRoot().getProjects()) {
-			IProjectDescription projectDescription = project.getDescription();
-			BuildCommand command = (BuildCommand) projectDescription.getBuildSpec()[0];
-			Map<String, String> args = command.getArguments();
-			if (args == null) {
-				args = Collections.singletonMap(TimerBuilder.RULE_TYPE_ARG, type.toString());
-			} else {
-				args.put(TimerBuilder.RULE_TYPE_ARG, type.toString());
-			}
-			command.setArguments(args);
-			projectDescription.setBuildSpec(new ICommand[] {command});
-			project.setDescription(projectDescription, getMonitor());
+	private void makeProjectsDependOnEachOther(List<IProject> projects) throws CoreException {
+		for (int projectNumber = 1; projectNumber < projects.size(); projectNumber++) {
+			IProject project = projects.get(projectNumber);
+			IProjectDescription desc = project.getDescription();
+			desc.setReferencedProjects(new IProject[] { projects.get(projectNumber - 1) });
+			project.setDescription(desc, createTestMonitor());
 		}
 	}
 
-	@Test
-	public void testIndividualProjectBuildsInParallelNoConflict() throws CoreException, OperationCanceledException, InterruptedException {
-		long duration = System.currentTimeMillis();
-		JobGroup group = new JobGroup("Build Group", 5, getWorkspace().getRoot().getProjects().length);
-		for (IProject project : getWorkspace().getRoot().getProjects()) {
-			Job job = new Job("Building " + project) {
-				@Override
-				public IStatus run(IProgressMonitor monitor) {
-					try {
-						project.build(IncrementalProjectBuilder.FULL_BUILD, monitor);
-						return Status.OK_STATUS;
-					} catch (CoreException e) {
-						return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-					}
-				}
-			};
-			job.setJobGroup(group);
-			job.schedule();
+	private void makeProjectBuildConfigurationsDependOnEachOther(List<IProject> projects) throws CoreException {
+		for (int projectNumber = 1; projectNumber < projects.size(); projectNumber++) {
+			IProject project = projects.get(projectNumber);
+			IProjectDescription description = project.getDescription();
+			description.setBuildConfigReferences(project.getActiveBuildConfig().getName(),
+					new IBuildConfiguration[] { projects.get(projectNumber - 1).getActiveBuildConfig() });
+			project.setDescription(description, createTestMonitor());
 		}
-		Assert.assertTrue("Timeout, most likely a deadlock", group.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() >= 3);
-		assertTrue(duration < projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
 	}
 
-	@Test
-	public void testIndividualProjectBuildsInParallelProjectScheduling() throws CoreException, OperationCanceledException, InterruptedException {
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.CURRENT_PROJECT_RELAXED, getMonitor());
-		long duration = System.currentTimeMillis();
-		JobGroup group = new JobGroup("Build Group", 5, getWorkspace().getRoot().getProjects().length);
-		for (IProject project : getWorkspace().getRoot().getProjects()) {
-			Job job = new Job("Building " + project) {
-				@Override
-				public IStatus run(IProgressMonitor monitor) {
-					try {
-						project.build(IncrementalProjectBuilder.FULL_BUILD, monitor);
-						return Status.OK_STATUS;
-					} catch (CoreException e) {
-						return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-					}
-				}
-			};
-			job.setJobGroup(group);
-			job.schedule();
-		}
-		Assert.assertTrue("Timeout, most likely a deadlock", group.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() >= 3);
-		assertTrue(duration < projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
+	private void executeIncrementalWorkspaceBuild(Runnable executeWhileRunningBuild) throws Exception {
+		executeIncrementalWorkspaceBuild(null, executeWhileRunningBuild);
 	}
 
-	@Test
-	public void testWorkspaceBuildConfigParrallelProjectRule() throws CoreException, OperationCanceledException, InterruptedException {
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.CURRENT_PROJECT, getMonitor());
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(
-							Arrays.stream(getWorkspace().getRoot().getProjects()).map(p -> {
-								try {
-									return p.getActiveBuildConfig();
-								} catch (CoreException e) {
-									fail(e.getMessage(), e);
-									return null;
-								}
-							}).toArray(IBuildConfiguration[]::new),
-							IncrementalProjectBuilder.INCREMENTAL_BUILD,
-							true,
-							getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() > 1);
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() <= getWorkspace().getDescription().getMaxConcurrentBuilds());
-		assertTrue(duration < projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-	}
-
-	@Test
-	public void testWorkspaceParrallelBuildNoConflict() throws CoreException, OperationCanceledException, InterruptedException {
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.NO_CONFLICT, getMonitor());
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() > 1);
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() <= getWorkspace().getDescription().getMaxConcurrentBuilds());
-		assertTrue(duration < projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-	}
-
-	@Test
-	public void testWorkspaceParrallelBuildConflictingRules() throws CoreException, OperationCanceledException, InterruptedException {
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.WORKSPACE_ROOT, getMonitor());
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertEquals(1, TimerBuilder.getMaxSimultaneousBuilds());
-		assertTrue(
-				"Running " + projectWithLongRunningBuilds().length + " conflicting jobs of duration "
-						+ LONG_BUILD_DURATION + " should have taken more than " + duration,
-				duration > projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-	}
-
-	@Test
-	public void testWorkspaceParrallelBuildCurrentProject() throws CoreException, OperationCanceledException, InterruptedException {
+	private void executeIncrementalWorkspaceBuild(IBuildConfiguration[] buildConfigurations,
+			Runnable executeWhileRunningBuild) throws Exception {
+		int expectedNumberOfBuilds = buildConfigurations != null ? buildConfigurations.length : getAllProjects().size();
+		TimerBuilder.setExpectedNumberOfBuilds(expectedNumberOfBuilds);
 		TestBarrier2 waitForRunningJobBarrier = new TestBarrier2();
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.CURRENT_PROJECT, getMonitor());
-		long duration = System.currentTimeMillis();
 		Job job = new Job("Workspace Build") {
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
 				try {
 					waitForRunningJobBarrier.setStatus(TestBarrier2.STATUS_RUNNING);
-					getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+					if (buildConfigurations != null) {
+						getWorkspace().build(buildConfigurations, IncrementalProjectBuilder.INCREMENTAL_BUILD, false,
+								createTestMonitor());
+					} else {
+						getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
+					}
 					return Status.OK_STATUS;
 				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
+					return new Status(IStatus.ERROR, PI_RESOURCES_TESTS, e.getMessage(), e);
 				}
+
 			}
 		};
-
 		job.schedule();
 		waitForRunningJobBarrier.waitForStatus(TestBarrier2.STATUS_RUNNING);
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(20000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(getWorkspace().getRoot().getProjects().length, TimerBuilder.getTotalBuilds());
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() > 1);
-		assertTrue(TimerBuilder.getMaxSimultaneousBuilds() <= getWorkspace().getDescription().getMaxConcurrentBuilds());
-		assertTrue(duration < projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-	}
-
-	public void testDependentProjectsBuildSequentially() throws Exception {
-		IProject[] allProjects = getWorkspace().getRoot().getProjects();
-		for (int i = 1; i < allProjects.length; i++) {
-			IProject project = allProjects[i];
-			IProjectDescription desc = project.getDescription();
-			desc.setReferencedProjects(new IProject[] {allProjects[i - 1]});
-			project.setDescription(desc, getMonitor());
+		try {
+			executeWhileRunningBuild.run();
+		} finally {
+			TimerBuilder.abortCurrentBuilds();
+			job.cancel();
+			boolean joinSuccessful = job.join(TIMEOUT_IN_MILLIS, createTestMonitor());
+			assertTrue(joinSuccessful, "timeout occurred when waiting for job that runs the build to finish");
 		}
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.NO_CONFLICT, getMonitor());
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(5000, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(allProjects.length, TimerBuilder.getTotalBuilds());
-		assertEquals(1, TimerBuilder.getMaxSimultaneousBuilds());
-		assertTrue(duration > projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-		assertEquals(sequentialBuildEvents(allProjects), TimerBuilder.events);
 	}
 
-	private List<Object> sequentialBuildEvents(IProject[] allProjects) {
-		List<Object> res = new ArrayList<>(allProjects.length * 2);
-		for (IProject project : allProjects) {
-			res.add(TimerBuilder.buildStartEvent(project));
-			res.add(TimerBuilder.buildCompleteEvent(project));
+	private void executeIndividualFullProjectBuilds(int numberOfParallelBuilds, Runnable executeWhileRunningBuild)
+			throws Exception {
+		List<IProject> projects = getAllProjects();
+		TimerBuilder.setExpectedNumberOfBuilds(projects.size());
+		JobGroup jobGroup = new JobGroup("Build Group", numberOfParallelBuilds, projects.size());
+		Map<IProject, TestBarrier2> waitForRunningJobBarriers = new HashMap<>();
+		for (IProject project : projects) {
+			waitForRunningJobBarriers.put(project, new TestBarrier2());
+			Job job = new Job("Building " + project.getName()) {
+				@Override
+				protected IStatus run(IProgressMonitor monitor) {
+					try {
+						waitForRunningJobBarriers.get(project).setStatus(TestBarrier2.STATUS_RUNNING);
+						project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
+						return Status.OK_STATUS;
+					} catch (CoreException e) {
+						return new Status(IStatus.ERROR, PI_RESOURCES_TESTS, e.getMessage(),
+								e);
+					}
+
+				}
+			};
+			job.setJobGroup(jobGroup);
+			job.schedule();
+		}
+		for (TestBarrier2 barrier : waitForRunningJobBarriers.values()) {
+			barrier.waitForStatus(TestBarrier2.STATUS_RUNNING);
+		}
+		try {
+			executeWhileRunningBuild.run();
+		} finally {
+			TimerBuilder.abortCurrentBuilds();
+			jobGroup.cancel();
+			boolean joinSuccessful = jobGroup.join(TIMEOUT_IN_MILLIS, createTestMonitor());
+			assertTrue(joinSuccessful, "timeout occurred when waiting for job group that runs the builds to finish");
+		}
+	}
+
+	private void assertMinimumNumberOfSimultaneousBuilds(int minimumNumberOfSimulaneousBuilds) {
+		assertThat(TimerBuilder.getMaximumNumberOfSimultaneousBuilds())
+				.as("check maximum number of parallel builds exceeds minimum expected number")
+				.isGreaterThanOrEqualTo(minimumNumberOfSimulaneousBuilds);
+	}
+
+	private void assertMaximumNumberOfSimultaneousBuilds(int maximumNumberOfSimulaneousBuilds) {
+		assertThat(TimerBuilder.getMaximumNumberOfSimultaneousBuilds())
+				.as("check maximum number of parallel builds does not exceed maximum expected number")
+				.isLessThanOrEqualTo(maximumNumberOfSimulaneousBuilds);
+	}
+
+	private void assertMaximumNumberOfConcurrentWorkspaceBuilds() {
+		assertThat(TimerBuilder.getMaximumNumberOfSimultaneousBuilds())
+				.as("check maximum number of parallel builds does not exceed workspace limit")
+				.isLessThanOrEqualTo(getWorkspace().getDescription().getMaxConcurrentBuilds());
+	}
+
+	private void assertBuildsToStart(List<IProject> projects) {
+		waitForCondition(() -> TimerBuilder.getStartedProjectBuilds().containsAll(projects), TIMEOUT_IN_MILLIS);
+		assertThat(TimerBuilder.getStartedProjectBuilds()).as("check all build jobs have started in time")
+				.containsAll(projects);
+	}
+
+	private static class ExpectedExecutionTime {
+		final long startTimeInNs = System.nanoTime();
+		final long minimumExecutionTimeInMillis;
+
+		private ExpectedExecutionTime(int minimumExecutionTimeInMillis) {
+			this.minimumExecutionTimeInMillis = minimumExecutionTimeInMillis;
+		}
+
+		private long getExecutionTimeInMillis() {
+			return (int) ((System.nanoTime() - startTimeInNs) / 1_000_000);
+		}
+
+		void assertMinimumExecutionTimeReached() {
+			assertThat(getExecutionTimeInMillis())
+					.as("check build was not faster than the expected execution time (in milliseconds)")
+					.isGreaterThanOrEqualTo(minimumExecutionTimeInMillis);
+		}
+
+		static ExpectedExecutionTime captureFromCurrentTime(int minimumExecutionTimeInMillis) {
+			return new ExpectedExecutionTime(minimumExecutionTimeInMillis);
+		}
+	}
+
+	private void assertBuildsToFinish(List<IProject> projects) {
+		waitForCondition(() -> TimerBuilder.getFinishedProjectBuilds().containsAll(projects), TIMEOUT_IN_MILLIS);
+		assertThat(TimerBuilder.getFinishedProjectBuilds()).as("check all build jobs have finished in time")
+				.containsAll(projects);
+	}
+
+	private void assertSequentialBuildEventsForProjects(Iterable<IProject> projects) {
+		assertThat(TimerBuilder.getBuildEvents()).as("order of build events")
+				.isEqualTo(getExpectedSequentialBuildEvents(projects));
+	}
+
+	private Iterable<Object> getExpectedSequentialBuildEvents(Iterable<IProject> projects) {
+		List<Object> res = new ArrayList<>();
+		for (IProject project : projects) {
+			res.add(TimerBuilder.createStartEvent(project));
+			res.add(TimerBuilder.createCompleteEvent(project));
 		}
 		return res;
 	}
 
-	public void testDependentBuildConfigBuildSequentially() throws Exception {
-		IProject[] allProjects = getWorkspace().getRoot().getProjects();
-		for (int i = 1; i < allProjects.length; i++) {
-			IProject project = allProjects[i];
-			IProjectDescription desc = project.getDescription();
-			desc.setBuildConfigReferences(project.getActiveBuildConfig().getName(), new IBuildConfiguration[] {allProjects[i - 1].getActiveBuildConfig()});
-			project.setDescription(desc, getMonitor());
-		}
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.NO_CONFLICT, getMonitor());
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(0, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(allProjects.length, TimerBuilder.getTotalBuilds());
-		assertEquals(1, TimerBuilder.getMaxSimultaneousBuilds());
-		assertTrue(duration > projectWithLongRunningBuilds().length * LONG_BUILD_DURATION);
-		assertEquals(sequentialBuildEvents(allProjects), TimerBuilder.events);
-	}
-
-	public void testDependentBuildConfigsSubset() throws Exception {
-		setTimerBuilderSchedulingRuleForAllProjects(RuleType.NO_CONFLICT, getMonitor());
-		IProject[] allProjects = getWorkspace().getRoot().getProjects();
-		for (int i = 1; i < allProjects.length; i++) {
-			IProject project = allProjects[i];
-			IProjectDescription desc = project.getDescription();
-			desc.setBuildConfigReferences(project.getActiveBuildConfig().getName(),
-					new IBuildConfiguration[] { allProjects[i - 1].getActiveBuildConfig() });
-			project.setDescription(desc, getMonitor());
-		}
-		long duration = System.currentTimeMillis();
-		Job job = new Job("Workspace Build") {
-			@Override
-			protected IStatus run(IProgressMonitor monitor) {
-				try {
-					getWorkspace().build(new IBuildConfiguration[] {allProjects[0].getActiveBuildConfig(), allProjects[2].getActiveBuildConfig(), allProjects[3].getActiveBuildConfig(), allProjects[5].getActiveBuildConfig(),}, IncrementalProjectBuilder.INCREMENTAL_BUILD, false, getMonitor());
-					return Status.OK_STATUS;
-				} catch (CoreException e) {
-					return new Status(IStatus.ERROR, "org.eclipse.core.tests.resources", e.getMessage(), e);
-				}
-			}
-		};
-		job.schedule();
-		Assert.assertTrue("Timeout, most likely a deadlock", job.join(0, getMonitor()));
-		duration = System.currentTimeMillis() - duration;
-		assertEquals(allProjects.length - 2, TimerBuilder.getTotalBuilds());
-		assertEquals(Arrays.asList(TimerBuilder.buildStartEvent(allProjects[0]),
-				TimerBuilder.buildCompleteEvent(allProjects[0]),
-				TimerBuilder.buildStartEvent(allProjects[2]),
-				TimerBuilder.buildCompleteEvent(allProjects[2]),
-				TimerBuilder.buildStartEvent(allProjects[3]),
-				TimerBuilder.buildCompleteEvent(allProjects[3]),
-				TimerBuilder.buildStartEvent(allProjects[5]),
-				TimerBuilder.buildCompleteEvent(allProjects[5])
-			), TimerBuilder.events);
-	}
 }

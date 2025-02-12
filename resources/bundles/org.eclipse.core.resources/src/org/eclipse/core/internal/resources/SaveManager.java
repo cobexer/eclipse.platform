@@ -21,25 +21,85 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FilenameFilter;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.*;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinWorkerThread;
 import java.util.stream.Collectors;
-import java.util.zip.*;
+import java.util.zip.Deflater;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
-import org.eclipse.core.internal.events.*;
-import org.eclipse.core.internal.localstore.*;
-import org.eclipse.core.internal.utils.*;
-import org.eclipse.core.internal.watson.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.internal.events.BuilderPersistentInfo;
+import org.eclipse.core.internal.events.ResourceComparator;
+import org.eclipse.core.internal.events.ResourceStats;
+import org.eclipse.core.internal.localstore.SafeChunkyInputStream;
+import org.eclipse.core.internal.localstore.SafeChunkyOutputStream;
+import org.eclipse.core.internal.localstore.SafeFileInputStream;
+import org.eclipse.core.internal.localstore.SafeFileOutputStream;
+import org.eclipse.core.internal.utils.IStringPoolParticipant;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.internal.utils.Policy;
+import org.eclipse.core.internal.utils.StringPool;
+import org.eclipse.core.internal.utils.WrappedRuntimeException;
+import org.eclipse.core.internal.watson.ElementTree;
+import org.eclipse.core.internal.watson.ElementTreeIterator;
+import org.eclipse.core.internal.watson.ElementTreeWriter;
+import org.eclipse.core.internal.watson.IElementContentVisitor;
+import org.eclipse.core.internal.watson.IElementInfoFlattener;
+import org.eclipse.core.resources.IContainer;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.ISaveContext;
+import org.eclipse.core.resources.ISaveParticipant;
+import org.eclipse.core.resources.ISavedState;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.ISafeRunnable;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.ProgressMonitorWrapper;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.SafeRunner;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.osgi.util.NLS;
@@ -66,7 +126,7 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 		}
 	}
 
-	protected static final String ROOT_SEQUENCE_NUMBER_KEY = Path.ROOT + LocalMetaArea.F_TREE;
+	protected static final String ROOT_SEQUENCE_NUMBER_KEY = IPath.ROOT + LocalMetaArea.F_TREE;
 	protected static final String CLEAR_DELTA_PREFIX = "clearDelta_"; //$NON-NLS-1$
 	protected static final String DELTA_EXPIRATION_PREFIX = "deltaExpiration_"; //$NON-NLS-1$
 	protected static final int DONE_SAVING = 3;
@@ -233,7 +293,7 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 				continue;
 			String prefix = key.substring(0, key.length() - LocalMetaArea.F_TREE.length());
 			//always save the root tree entry
-			if (prefix.equals(Path.ROOT.toString()))
+			if (prefix.equals(IPath.ROOT.toString()))
 				continue;
 			IProject project = workspace.getRoot().getProject(prefix);
 			if (!project.exists() || project.isOpen())
@@ -410,8 +470,8 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 	public void forgetSavedTree(String pluginId) {
 		if (pluginId == null) {
 			synchronized (savedStates) {
-				for (SavedState savedState : savedStates.values())
-					savedState.forgetTrees();
+				for (SavedState state : savedStates.values())
+					state.forgetTrees();
 			}
 		} else {
 			SavedState state = savedStates.get(pluginId);
@@ -908,7 +968,7 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 			//try to read private metadata and add to the description
 			workspace.getMetaArea().readPrivateDescription(project, description);
 		}
-		project.internalSetDescription(description, false);
+		project.internalSetDescription(description, false, true);
 		if (failure != null) {
 			try {
 				// write the project tree ...
@@ -1101,25 +1161,18 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 		monitor = Policy.monitorFor(monitor);
 		String message;
 		IPath snapshotPath = null;
-		try {
-			monitor.beginTask("", Policy.totalWork); //$NON-NLS-1$
-			InputStream snapIn = new FileInputStream(snapshotFile);
-			ZipInputStream zip = new ZipInputStream(snapIn);
+		monitor.beginTask("", Policy.totalWork); //$NON-NLS-1$
+		try (ZipInputStream zip = new ZipInputStream(new FileInputStream(snapshotFile))) {
 			ZipEntry treeEntry = zip.getNextEntry();
 			if (treeEntry == null || !treeEntry.getName().equals("resource-index.tree")) { //$NON-NLS-1$
-				zip.close();
 				return false;
 			}
-			try (
-				DataInputStream input = new DataInputStream(zip);
-			) {
+			try (DataInputStream input = new DataInputStream(zip)) {
 				WorkspaceTreeReader reader = WorkspaceTreeReader.getReader(workspace, input.readInt(), true);
 				reader.readTree(project, input, Policy.subMonitorFor(monitor, Policy.totalWork));
-			} finally {
-				zip.close();
 			}
 		} catch (IOException e) {
-			snapshotPath = new Path(snapshotFile.getPath());
+			snapshotPath = IPath.fromOSString(snapshotFile.getPath());
 			message = NLS.bind(Messages.resources_readMeta, snapshotPath);
 			throw new ResourceException(IResourceStatus.FAILED_READ_METADATA, snapshotPath, message, e);
 		} finally {
@@ -1339,44 +1392,20 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 	 */
 	public void saveRefreshSnapshot(Project project, URI snapshotLocation, IProgressMonitor monitor) throws CoreException {
 		IFileStore store = EFS.getStore(snapshotLocation);
-		IPath snapshotPath = new Path(snapshotLocation.getPath());
-		java.io.File tmpTree = null;
-		try {
-			tmpTree = java.io.File.createTempFile("tmp", ".tree"); //$NON-NLS-1$//$NON-NLS-2$
-		} catch (IOException e) {
-			throw new ResourceException(IResourceStatus.FAILED_WRITE_LOCAL, snapshotPath, Messages.resources_copyProblem, e);
-		}
-		ZipOutputStream out = null;
-		try {
-			FileOutputStream fis = new FileOutputStream(tmpTree);
-			try (
-				DataOutputStream output = new DataOutputStream(fis);
-			) {
+		IPath snapshotPath = IPath.fromOSString(snapshotLocation.getPath());
+		try (ByteArrayOutputStream tmp = new ByteArrayOutputStream()) {
+			try (DataOutputStream output = new DataOutputStream(tmp)) {
 				output.writeInt(ICoreConstants.WORKSPACE_TREE_VERSION_2);
 				writeTree(project, output, monitor);
 			}
-			OutputStream snapOut = store.openOutputStream(EFS.NONE, monitor);
-			out = new ZipOutputStream(snapOut);
-			out.setLevel(Deflater.BEST_COMPRESSION);
-			ZipEntry e = new ZipEntry("resource-index.tree"); //$NON-NLS-1$
-			out.putNextEntry(e);
-			int read = 0;
-			byte[] buffer = new byte[4096];
-			try (
-				InputStream in = new FileInputStream(tmpTree);
-			) {
-				while ((read = in.read(buffer)) >= 0) {
-					out.write(buffer, 0, read);
-				}
-				out.closeEntry();
+			try (ZipOutputStream out = new ZipOutputStream(store.openOutputStream(EFS.NONE, monitor))) {
+				out.setLevel(Deflater.BEST_COMPRESSION);
+				ZipEntry e = new ZipEntry("resource-index.tree"); //$NON-NLS-1$
+				out.putNextEntry(e);
+				tmp.writeTo(out);
 			}
-			out.close();
 		} catch (IOException e) {
 			throw new ResourceException(IResourceStatus.FAILED_WRITE_LOCAL, snapshotPath, Messages.resources_copyProblem, e);
-		} finally {
-			FileUtil.safeClose(out);
-			if (tmpTree != null)
-				tmpTree.delete();
 		}
 	}
 
@@ -1399,7 +1428,7 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 			}
 		} catch (Exception e) {
 			String msg = NLS.bind(Messages.resources_writeWorkspaceMeta, treeLocation);
-			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, Path.ROOT, msg, e);
+			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, IPath.ROOT, msg, e);
 		}
 		if (Policy.DEBUG_SAVE_TREE)
 			Policy.debug("Save Workspace Tree: " + (System.currentTimeMillis() - start) + "ms"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -1489,14 +1518,14 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 				try (DataOutputStream out = new DataOutputStream(safeStream);) {
 					out.writeInt(ICoreConstants.WORKSPACE_TREE_VERSION_2);
 					writeWorkspaceFields(out, subMonitor);
-					writer.writeDelta(tree, lastSnap, Path.ROOT, ElementTreeWriter.D_INFINITE, out,
+					writer.writeDelta(tree, lastSnap, IPath.ROOT, ElementTreeWriter.D_INFINITE, out,
 							ResourceComparator.getSaveComparator());
 					safeStream.succeed();
 					out.close();
 				}
 			} catch (IOException e) {
 				message = NLS.bind(Messages.resources_writeWorkspaceMeta, localFile.getAbsolutePath());
-				throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, Path.ROOT, message, e);
+				throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, IPath.ROOT, message, e);
 			}
 			lastSnap = tree;
 			if (Policy.DEBUG_SAVE_TREE)
@@ -1680,61 +1709,51 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 		IPath syncInfoTempLocation = workspace.getMetaArea().getBackupLocationFor(syncInfoLocation);
 		final List<String> writtenTypes = new ArrayList<>(5);
 		final List<QualifiedName> writtenPartners = new ArrayList<>(synchronizer.registry.size());
-		DataOutputStream o1 = null;
-		DataOutputStream o2 = null;
 		String message;
 
 		// Create the output streams
-		try {
-			o1 = new DataOutputStream(new SafeFileOutputStream(markersLocation.toOSString(), markersTempLocation.toOSString()));
-			// we don't store the sync info for the workspace root so don't create
-			// an empty file
-			if (root.getType() != IResource.ROOT)
-				o2 = new DataOutputStream(new SafeFileOutputStream(syncInfoLocation.toOSString(), syncInfoTempLocation.toOSString()));
-		} catch (IOException e) {
-			FileUtil.safeClose(o1);
-			FileUtil.safeClose(o2);
-			message = NLS.bind(Messages.resources_writeMeta, root.getFullPath());
-			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, root.getFullPath(), message, e);
-		}
+		try (DataOutputStream markersOutput = new DataOutputStream(
+				new SafeFileOutputStream(markersLocation.toOSString(), markersTempLocation.toOSString()));
+				DataOutputStream syncInfoOutput = (root.getType() == IResource.ROOT) ? null
+						: new DataOutputStream(new SafeFileOutputStream(syncInfoLocation.toOSString(),
+								syncInfoTempLocation.toOSString()))) {
 
-		final DataOutputStream markersOutput = o1;
-		final DataOutputStream syncInfoOutput = o2;
-		// The following 2 piece array will hold a running total of the times
-		// taken to save markers and syncInfo respectively.  This will cut down
-		// on the number of statements printed out as we would get 2 statements
-		// for each resource otherwise.
-		final long[] saveTimes = new long[2];
+			// The following 2 piece array will hold a running total of the times
+			// taken to save markers and syncInfo respectively. This will cut down
+			// on the number of statements printed out as we would get 2 statements
+			// for each resource otherwise.
+			final long[] saveTimes = new long[2];
 
-		// Create the visitor
-		IElementContentVisitor visitor = (tree, requestor, elementContents) -> {
-			ResourceInfo info = (ResourceInfo) elementContents;
-			if (info != null) {
-				try {
-					// save the markers
-					long start = System.currentTimeMillis();
-					markerManager.save(info, requestor, markersOutput, writtenTypes);
-					long markerSaveTime = System.currentTimeMillis() - start;
-					saveTimes[0] += markerSaveTime;
-					persistMarkers += markerSaveTime;
-					// save the sync info - if we have the workspace root then the output stream will be null
-					if (syncInfoOutput != null) {
-						start = System.currentTimeMillis();
-						synchronizer.saveSyncInfo(info, requestor, syncInfoOutput, writtenPartners);
-						long syncInfoSaveTime = System.currentTimeMillis() - start;
-						saveTimes[1] += syncInfoSaveTime;
-						persistSyncInfo += syncInfoSaveTime;
+			// Create the visitor
+			IElementContentVisitor visitor = (tree, requestor, elementContents) -> {
+				ResourceInfo info = (ResourceInfo) elementContents;
+				if (info != null) {
+					try {
+						// save the markers
+						long start = System.currentTimeMillis();
+						markerManager.save(info, requestor, markersOutput, writtenTypes);
+						long markerSaveTime = System.currentTimeMillis() - start;
+						saveTimes[0] += markerSaveTime;
+						persistMarkers += markerSaveTime;
+						// save the sync info - if we have the workspace root then the output stream
+						// will be null
+						if (syncInfoOutput != null) {
+							start = System.currentTimeMillis();
+							synchronizer.saveSyncInfo(info, requestor, syncInfoOutput, writtenPartners);
+							long syncInfoSaveTime = System.currentTimeMillis() - start;
+							saveTimes[1] += syncInfoSaveTime;
+							persistSyncInfo += syncInfoSaveTime;
+						}
+					} catch (IOException e) {
+						throw new WrappedRuntimeException(e);
 					}
-				} catch (IOException e) {
-					throw new WrappedRuntimeException(e);
 				}
-			}
-			// don't continue if the current resource is the workspace root, only continue for projects
-			return root.getType() != IResource.ROOT;
-		};
+				// don't continue if the current resource is the workspace root, only continue
+				// for projects
+				return root.getType() != IResource.ROOT;
+			};
 
-		// Call the visitor
-		try {
+			// Call the visitor
 			try {
 				new ElementTreeIterator(workspace.getElementTree(), root.getFullPath()).iterate(visitor);
 			} catch (WrappedRuntimeException e) {
@@ -1755,41 +1774,61 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 		} catch (IOException e) {
 			message = NLS.bind(Messages.resources_writeMeta, root.getFullPath());
 			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, root.getFullPath(), message, e);
-		} finally {
-			FileUtil.safeClose(markersOutput);
-			FileUtil.safeClose(syncInfoOutput);
 		}
 
 		// recurse over the projects in the workspace if we were given the workspace root
 		if (root.getType() == IResource.PROJECT)
 			return;
-		IProject[] projects = ((IWorkspaceRoot) root).getProjects(IContainer.INCLUDE_HIDDEN);
+		forEachProjectInParallel(null, this::visitAndSave);
+	}
+
+	@FunctionalInterface
+	public interface CoreConsumer<T> {
+		/**
+		 * Performs this operation on the given argument.
+		 *
+		 * @param t the input argument
+		 */
+		void accept(T t) throws CoreException;
+	}
+
+	private void forEachProjectInParallel(IProgressMonitor m, CoreConsumer<IProject> consumer) throws CoreException {
+		IProject[] projects = workspace.getRoot().getProjects(IContainer.INCLUDE_HIDDEN);
+		if (projects.length == 0) {
+			return;
+		}
+		SubMonitor subMointor = SubMonitor.convert(m, projects.length);
+		IStatus[] stats;
 		// Never use a shared ForkJoinPool.commonPool() as it may be busy with other tasks, which might deadlock.
 		// Also use a custom ForkJoinWorkerThreadFactory, to prevent issues with a
 		// potential SecurityManager, since the threads created by it get no permissions.
 		// See https://github.com/eclipse-platform/eclipse.platform/issues/294
-		ForkJoinPool forkJoinPool = new ForkJoinPool(ForkJoinPool.getCommonPoolParallelism(),
+		ExecutorService executor = new ForkJoinPool(ForkJoinPool.getCommonPoolParallelism(),
 				pool -> new ForkJoinWorkerThread(pool) {
 					// anonymous subclass to access protected constructor
 				}, null, false);
-		IStatus[] stats;
 		try {
-			stats = forkJoinPool.submit(() -> Arrays.stream(projects).parallel().map(project -> {
+			stats = executor.submit(() -> Arrays.stream(projects).parallel().map(project -> {
+				subMointor.split(1);
 				try {
-					visitAndSave(project);
+					consumer.accept(project);
 				} catch (CoreException e) {
-					return e.getStatus();
+					return Status.error("Error with project " + project.getName(), e); //$NON-NLS-1$
 				}
 				return null;
 			}).filter(Objects::nonNull).toArray(IStatus[]::new)).get();
 		} catch (InterruptedException | ExecutionException e) {
-			throw new CoreException(Status.error(Messages.resources_saveProblem, e));
+			List<Runnable> notExecuted = executor.shutdownNow();
+			throw new CoreException(Status.error("Error with " + notExecuted.size() + " projects left.", e)); //$NON-NLS-1$//$NON-NLS-2$
 		} finally {
-			forkJoinPool.shutdown();
+			executor.shutdown();
+		}
+		if (stats.length == 1) {
+			throw new CoreException(stats[1]);
 		}
 		if (stats.length > 0) {
 			throw new CoreException(new MultiStatus(ResourcesPlugin.PI_RESOURCES, IStatus.ERROR, stats,
-					Messages.resources_saveProblem, null));
+					"Error with " + stats.length + " projects.", null)); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 	}
 
@@ -1813,86 +1852,72 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 		IPath syncInfoLocation = workspace.getMetaArea().getSyncInfoSnapshotLocationFor(root);
 		SafeChunkyOutputStream safeMarkerStream = null;
 		SafeChunkyOutputStream safeSyncInfoStream = null;
-		DataOutputStream o1 = null;
-		DataOutputStream o2 = null;
 		String message;
 
 		// Create the output streams
 		try {
 			safeMarkerStream = new SafeChunkyOutputStream(markersLocation.toFile());
-			o1 = new DataOutputStream(safeMarkerStream);
-			// we don't store the sync info for the workspace root so don't create
-			// an empty file
-			if (root.getType() != IResource.ROOT) {
-				safeSyncInfoStream = new SafeChunkyOutputStream(syncInfoLocation.toFile());
-				o2 = new DataOutputStream(safeSyncInfoStream);
-			}
-		} catch (IOException e) {
-			FileUtil.safeClose(o1);
-			message = NLS.bind(Messages.resources_writeMeta, root.getFullPath());
-			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, root.getFullPath(), message, e);
-		}
+			try (DataOutputStream markersOutput = new DataOutputStream(safeMarkerStream);
+					DataOutputStream syncInfoOutput = (root.getType() == IResource.ROOT) ? null
+							: new DataOutputStream(
+									safeSyncInfoStream = new SafeChunkyOutputStream(syncInfoLocation.toFile()))) {
+				int markerFileSize = markersOutput.size();
+				int syncInfoFileSize = safeSyncInfoStream == null ? -1 : syncInfoOutput.size();
+				// The following 2 piece array will hold a running total of the times
+				// taken to save markers and syncInfo respectively. This will cut down
+				// on the number of statements printed out as we would get 2 statements
+				// for each resource otherwise.
+				final long[] snapTimes = new long[2];
 
-		final DataOutputStream markersOutput = o1;
-		final DataOutputStream syncInfoOutput = o2;
-		int markerFileSize = markersOutput.size();
-		int syncInfoFileSize = safeSyncInfoStream == null ? -1 : syncInfoOutput.size();
-		// The following 2 piece array will hold a running total of the times
-		// taken to save markers and syncInfo respectively.  This will cut down
-		// on the number of statements printed out as we would get 2 statements
-		// for each resource otherwise.
-		final long[] snapTimes = new long[2];
-
-		IElementContentVisitor visitor = (tree, requestor, elementContents) -> {
-			ResourceInfo info = (ResourceInfo) elementContents;
-			if (info != null) {
-				try {
-					// save the markers
-					long start = System.currentTimeMillis();
-					markerManager.snap(info, requestor, markersOutput);
-					long markerSnapTime = System.currentTimeMillis() - start;
-					snapTimes[0] += markerSnapTime;
-					persistMarkers += markerSnapTime;
-					// save the sync info - if we have the workspace root then the output stream will be null
-					if (syncInfoOutput != null) {
-						start = System.currentTimeMillis();
-						synchronizer.snapSyncInfo(info, requestor, syncInfoOutput);
-						long syncInfoSnapTime = System.currentTimeMillis() - start;
-						snapTimes[1] += syncInfoSnapTime;
-						persistSyncInfo += syncInfoSnapTime;
+				IElementContentVisitor visitor = (tree, requestor, elementContents) -> {
+					ResourceInfo info = (ResourceInfo) elementContents;
+					if (info != null) {
+						try {
+							// save the markers
+							long start = System.currentTimeMillis();
+							markerManager.snap(info, requestor, markersOutput);
+							long markerSnapTime = System.currentTimeMillis() - start;
+							snapTimes[0] += markerSnapTime;
+							persistMarkers += markerSnapTime;
+							// save the sync info - if we have the workspace root then the output stream
+							// will be null
+							if (syncInfoOutput != null) {
+								start = System.currentTimeMillis();
+								synchronizer.snapSyncInfo(info, requestor, syncInfoOutput);
+								long syncInfoSnapTime = System.currentTimeMillis() - start;
+								snapTimes[1] += syncInfoSnapTime;
+								persistSyncInfo += syncInfoSnapTime;
+							}
+						} catch (IOException e) {
+							throw new WrappedRuntimeException(e);
+						}
 					}
-				} catch (IOException e) {
-					throw new WrappedRuntimeException(e);
-				}
-			}
-			// don't continue if the current resource is the workspace root, only continue for projects
-			return root.getType() != IResource.ROOT;
-		};
+					// don't continue if the current resource is the workspace root, only continue
+					// for projects
+					return root.getType() != IResource.ROOT;
+				};
 
-		try {
-			// Call the visitor
-			try {
-				new ElementTreeIterator(workspace.getElementTree(), root.getFullPath()).iterate(visitor);
-			} catch (WrappedRuntimeException e) {
-				throw (IOException) e.getTargetException();
+				// Call the visitor
+				try {
+					new ElementTreeIterator(workspace.getElementTree(), root.getFullPath()).iterate(visitor);
+				} catch (WrappedRuntimeException e) {
+					throw (IOException) e.getTargetException();
+				}
+				if (Policy.DEBUG_SAVE_MARKERS)
+					Policy.debug("Snap Markers for " + root.getFullPath() + ": " + snapTimes[0] + "ms"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				if (Policy.DEBUG_SAVE_SYNCINFO)
+					Policy.debug("Snap SyncInfo for " + root.getFullPath() + ": " + snapTimes[1] + "ms"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				if (markerFileSize != markersOutput.size())
+					safeMarkerStream.succeed();
+				if (safeSyncInfoStream != null && syncInfoFileSize != syncInfoOutput.size()) {
+					safeSyncInfoStream.succeed();
+					syncInfoOutput.close();
+				}
+				markersOutput.close();
 			}
-			if (Policy.DEBUG_SAVE_MARKERS)
-				Policy.debug("Snap Markers for " + root.getFullPath() + ": " + snapTimes[0] + "ms"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-			if (Policy.DEBUG_SAVE_SYNCINFO)
-				Policy.debug("Snap SyncInfo for " + root.getFullPath() + ": " + snapTimes[1] + "ms"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-			if (markerFileSize != markersOutput.size())
-				safeMarkerStream.succeed();
-			if (safeSyncInfoStream != null && syncInfoFileSize != syncInfoOutput.size()) {
-				safeSyncInfoStream.succeed();
-				syncInfoOutput.close();
-			}
-			markersOutput.close();
 		} catch (IOException e) {
 			message = NLS.bind(Messages.resources_writeMeta, root.getFullPath());
 			throw new ResourceException(IResourceStatus.FAILED_WRITE_METADATA, root.getFullPath(), message, e);
-		} finally {
-			FileUtil.safeClose(markersOutput);
-			FileUtil.safeClose(syncInfoOutput);
 		}
 
 		// recurse over the projects in the workspace if we were given the workspace root
@@ -1954,7 +1979,6 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 	 * @param additionalTrees remaining trees to be persisted for other configurations
 	 * @param additionalBuilderInfos remaining builder infos for other configurations
 	 * @param additionalConfigNames configuration names of the remaining per-configuration trees
-	 * @throws CoreException
 	 */
 	private void getTreesToSave(IProject project, List<ElementTree> trees, List<BuilderPersistentInfo> builderInfos, List<String> configNames, List<ElementTree> additionalTrees, List<BuilderPersistentInfo> additionalBuilderInfos, List<String> additionalConfigNames) throws CoreException {
 		if (project.isOpen()) {
@@ -2054,7 +2078,7 @@ public class SaveManager implements IElementInfoFlattener, IManager, IStringPool
 			/* save the forest! */
 			ElementTreeWriter writer = new ElementTreeWriter(this);
 			ElementTree[] treesToSave = trees.toArray(new ElementTree[trees.size()]);
-			writer.writeDeltaChain(treesToSave, Path.ROOT, ElementTreeWriter.D_INFINITE, output,
+			writer.writeDeltaChain(treesToSave, IPath.ROOT, ElementTreeWriter.D_INFINITE, output,
 					ResourceComparator.getSaveComparator());
 			subMonitor.worked(4);
 

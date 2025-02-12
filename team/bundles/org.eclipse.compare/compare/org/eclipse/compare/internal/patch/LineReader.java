@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2011 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -40,10 +40,7 @@ public class LineReader {
 		if (!create && file != null && exists(file)) {
 			// read current contents
 			String charset = Utilities.getCharset(file);
-			InputStream is = null;
-			try {
-				is = file.getContents();
-
+			try (InputStream is = file.getContents()) {
 				Reader streamReader = null;
 				try {
 					streamReader = new InputStreamReader(is, charset);
@@ -52,18 +49,14 @@ public class LineReader {
 					streamReader = new InputStreamReader(is);
 				}
 
-				BufferedReader reader = new BufferedReader(streamReader);
-				lines = readLines(reader);
+				try (BufferedReader reader = new BufferedReader(streamReader)) {
+					lines = readLines(reader);
+				}
 			} catch (CoreException ex) {
 				// TODO
 				CompareUIPlugin.log(ex);
-			} finally {
-				if (is != null)
-					try {
-						is.close();
-					} catch (IOException ex) {
-						// silently ignored
-					}
+			} catch (IOException closeException) {
+				// silently ignored
 			}
 		}
 
@@ -97,7 +90,7 @@ public class LineReader {
 			while (iter.hasNext())
 				sb.append(iter.next());
 		} else {
-			String lineSeparator = System.getProperty("line.separator"); //$NON-NLS-1$
+			String lineSeparator = System.lineSeparator();
 			while (iter.hasNext()) {
 				String line = iter.next();
 				int l = length(line);
@@ -134,9 +127,9 @@ public class LineReader {
 	private boolean fHaveChar = false;
 	private int fLastChar;
 	private boolean fSawEOF = false;
-	private BufferedReader fReader;
+	private final BufferedReader fReader;
 	private boolean fIgnoreSingleCR = false;
-	private StringBuilder fBuffer = new StringBuilder();
+	private final StringBuilder fBuffer = new StringBuilder();
 
 	public LineReader(BufferedReader reader) {
 		fReader = reader;

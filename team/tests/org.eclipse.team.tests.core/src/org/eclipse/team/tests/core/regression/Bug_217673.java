@@ -13,26 +13,31 @@
  *******************************************************************************/
 package org.eclipse.team.tests.core.regression;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.harness.FileSystemHelper.getRandomLocation;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createUniqueString;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.setReadOnly;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.ResourceAttributes;
-import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
 import org.eclipse.team.core.RepositoryProvider;
-import org.eclipse.team.tests.core.TeamTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class Bug_217673 extends TeamTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_217673 {
 
+	@Test
 	public void test() throws CoreException {
-
-		IWorkspace workspace = ResourcesPlugin.getWorkspace();
+		IWorkspace workspace = getWorkspace();
 		final IProject project = workspace.getRoot().getProject(
-				getUniqueString());
+				createUniqueString());
 		project.create(null);
 		project.open(null);
 		IResource resource = project.getFile(".project");
@@ -45,8 +50,7 @@ public class Bug_217673 extends TeamTest {
 			linkTarget.toFile().mkdir();
 			project.getFolder("test").createLink(linkTarget, IResource.NONE,
 					null);
-			assertTrue(".project should no longer be read-only",
-					!isReadOnly(resource));
+			assertFalse(isReadOnly(resource), ".project should no longer be read-only");
 		} finally {
 			PessimisticRepositoryProvider.markWritableOnEdit = false;
 			RepositoryProvider.unmap(project);
@@ -58,10 +62,6 @@ public class Bug_217673 extends TeamTest {
 		ResourceAttributes resourceAttributes = resource
 				.getResourceAttributes();
 		return resourceAttributes.isReadOnly();
-	}
-
-	public static Test suite() {
-		return new TestSuite(Bug_217673.class);
 	}
 
 }

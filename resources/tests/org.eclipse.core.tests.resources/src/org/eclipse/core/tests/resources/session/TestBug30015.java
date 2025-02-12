@@ -13,70 +13,78 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.session;
 
-import junit.framework.Test;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IProjectDescription;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.tests.resources.AutomatedResourceTests;
-import org.eclipse.core.tests.resources.WorkspaceSessionTest;
-import org.eclipse.core.tests.session.WorkspaceSessionTestSuite;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.tests.harness.session.SessionTestExtension;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Tests regression of bug 30015.  Due to this bug, it was impossible to restore
  * a project whose location was relative to a workspace path variable.
  */
-public class TestBug30015 extends WorkspaceSessionTest {
-	protected static final String PROJECT_NAME = "Project";
-	protected static final String VAR_NAME = "ProjectLocatio";
-	protected IPath varValue;
-	protected IPath rawLocation;
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+public class TestBug30015 {
+
+	private static final String PROJECT_NAME = "Project";
+	private static final String VAR_NAME = "ProjectLocatio";
+
+	@RegisterExtension
+	static SessionTestExtension sessionTestExtension = SessionTestExtension.forPlugin(PI_RESOURCES_TESTS)
+			.withCustomization(SessionTestExtension.createCustomWorkspace()).create();
+
+	private IPath varValue;
+	private IPath rawLocation;
 
 	/**
 	 * Create and open the project
 	 */
-	public void test1() {
+	@SuppressWarnings("deprecation")
+	@Test
+	@Order(1)
+	public void test1() throws CoreException {
 		varValue = Platform.getLocation().removeLastSegments(1);
-		rawLocation = new Path(VAR_NAME).append("ProjectLocation");
+		rawLocation = IPath.fromOSString(VAR_NAME).append("ProjectLocation");
 		//define the variable
-		try {
-			getWorkspace().getPathVariableManager().setValue(VAR_NAME, varValue);
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		getWorkspace().getPathVariableManager().setValue(VAR_NAME, varValue);
 		IProject project = getWorkspace().getRoot().getProject(PROJECT_NAME);
 		IProjectDescription description = getWorkspace().newProjectDescription(PROJECT_NAME);
 		description.setLocation(rawLocation);
 		//create the project
-		try {
-			project.create(description, getMonitor());
-			project.open(getMonitor());
-		} catch (CoreException e) {
-			fail("9.99", e);
-		}
+		project.create(description, createTestMonitor());
+		project.open(createTestMonitor());
 		//save and shutdown
-		try {
-			getWorkspace().save(true, getMonitor());
-		} catch (CoreException e) {
-			fail("9.99", e);
-		}
+		getWorkspace().save(true, createTestMonitor());
 	}
 
 	/**
 	 * See if the project was successfully restored.
 	 */
+	@SuppressWarnings("deprecation")
+	@Test
+	@Order(2)
 	public void test2() {
 		varValue = Platform.getLocation().removeLastSegments(1);
-		rawLocation = new Path(VAR_NAME).append("ProjectLocation");
+		rawLocation = IPath.fromOSString(VAR_NAME).append("ProjectLocation");
 		IProject project = getWorkspace().getRoot().getProject(PROJECT_NAME);
 
-		assertEquals("1.0", varValue, getWorkspace().getPathVariableManager().getValue(VAR_NAME));
-		assertTrue("1.1", project.exists());
-		assertTrue("1.2", project.isOpen());
-		assertEquals("1.3", rawLocation, project.getRawLocation());
-		assertEquals("1.4", varValue.append(rawLocation.lastSegment()), project.getLocation());
+		assertEquals(varValue, getWorkspace().getPathVariableManager().getValue(VAR_NAME));
+		assertTrue(project.exists());
+		assertTrue(project.isOpen());
+		assertEquals(rawLocation, project.getRawLocation());
+		assertEquals(varValue.append(rawLocation.lastSegment()), project.getLocation());
 	}
 
-	public static Test suite() {
-		return new WorkspaceSessionTestSuite(AutomatedResourceTests.PI_RESOURCES_TESTS, TestBug30015.class);
-	}
 }

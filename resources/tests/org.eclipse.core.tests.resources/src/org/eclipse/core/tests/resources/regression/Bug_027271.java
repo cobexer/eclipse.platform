@@ -13,36 +13,43 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import org.eclipse.core.resources.IPathVariableManager;
 import org.eclipse.core.resources.ResourcesPlugin;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform.OS;
+import org.eclipse.core.runtime.Preferences;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests how changes in the underlying preference store may affect the path
  * variable manager.
  */
-
-public class Bug_027271 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_027271 {
 
 	static final String VARIABLE_PREFIX = "pathvariable."; //$NON-NLS-1$
 
-	private Preferences preferences;
-
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		preferences = ResourcesPlugin.getPlugin().getPluginPreferences();
+	@BeforeEach
+	public void setUp() {
 		clearPathVariablesProperties();
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@AfterEach
+	public void tearDown() {
 		clearPathVariablesProperties();
-		super.tearDown();
 	}
 
 	private void clearPathVariablesProperties() {
+		Preferences preferences = ResourcesPlugin.getPlugin().getPluginPreferences();
 		// ensure we have no preferences related to path variables
 		String[] propertyNames = preferences.propertyNames();
 		for (String propertyName : propertyNames) {
@@ -52,30 +59,27 @@ public class Bug_027271 extends ResourceTest {
 		}
 	}
 
+	@Test
 	public void testBug() {
-		//this bug is only relevant on Windows
-		if (!isWindows()) {
-			return;
-		}
+		assumeTrue("only relevant on Windows", OS.isWindows());
+
 		IPathVariableManager pvm = getWorkspace().getPathVariableManager();
 		Preferences prefs = ResourcesPlugin.getPlugin().getPluginPreferences();
 
-		assertEquals("1.0", 0, pvm.getPathVariableNames().length);
-		prefs.setValue(VARIABLE_PREFIX + "VALID_VAR", new Path("c:/temp").toPortableString());
-		assertEquals("1.1", 1, pvm.getPathVariableNames().length);
-		assertEquals("1.2", "VALID_VAR", pvm.getPathVariableNames()[0]);
+		assertThat(pvm.getPathVariableNames()).isEmpty();
+		prefs.setValue(VARIABLE_PREFIX + "VALID_VAR", IPath.fromOSString("c:/temp").toPortableString());
+		assertThat(pvm.getPathVariableNames()).containsExactly("VALID_VAR");
 
 		//sets invalid value (relative path)
-		IPath relativePath = new Path("temp");
+		IPath relativePath = IPath.fromOSString("temp");
 		prefs.setValue(VARIABLE_PREFIX + "INVALID_VAR", relativePath.toPortableString());
-		assertEquals("2.0", 1, pvm.getPathVariableNames().length);
-		assertEquals("2.1", "VALID_VAR", pvm.getPathVariableNames()[0]);
+		assertThat(pvm.getPathVariableNames()).containsExactly("VALID_VAR");
 
 		//sets invalid value (invalid path)
-		IPath invalidPath = new Path("c:\\a\\:\\b");
+		IPath invalidPath = IPath.fromOSString("c:\\a\\:\\b");
 		prefs.setValue(VARIABLE_PREFIX + "ANOTHER_INVALID_VAR", invalidPath.toPortableString());
-		assertTrue("3.0", !Path.EMPTY.isValidPath(invalidPath.toPortableString()));
-		assertEquals("3.1", 1, pvm.getPathVariableNames().length);
-		assertEquals("3.2", "VALID_VAR", pvm.getPathVariableNames()[0]);
+		assertFalse(IPath.EMPTY.isValidPath(invalidPath.toPortableString()));
+		assertThat(pvm.getPathVariableNames()).containsExactly("VALID_VAR");
 	}
+
 }

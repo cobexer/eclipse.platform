@@ -13,31 +13,54 @@
  *******************************************************************************/
 package org.eclipse.compare.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileFilter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.net.JarURLConnection;
 import java.net.URL;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 
-import org.eclipse.compare.internal.core.patch.*;
+import org.eclipse.compare.internal.core.patch.FileDiffResult;
+import org.eclipse.compare.internal.core.patch.FilePatch2;
+import org.eclipse.compare.internal.core.patch.LineReader;
 import org.eclipse.compare.internal.patch.WorkspacePatcher;
-import org.eclipse.compare.patch.*;
-import org.eclipse.compare.tests.PatchUtils.*;
+import org.eclipse.compare.patch.ApplyPatchOperation;
+import org.eclipse.compare.patch.IFilePatch;
+import org.eclipse.compare.patch.IFilePatchResult;
+import org.eclipse.compare.patch.IHunk;
+import org.eclipse.compare.patch.PatchConfiguration;
+import org.eclipse.compare.tests.PatchUtils.JarEntryStorage;
+import org.eclipse.compare.tests.PatchUtils.PatchTestConfiguration;
+import org.eclipse.compare.tests.PatchUtils.StringStorage;
 import org.eclipse.core.resources.IStorage;
-import org.eclipse.core.runtime.*;
-import org.junit.Assert;
-import org.junit.Test;
-
-import junit.framework.AssertionFailedError;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.FileLocator;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.junit.jupiter.api.Test;
 
 public class PatchTest {
 
@@ -83,15 +106,15 @@ public class PatchTest {
 		IStorage patchStorage = new StringStorage("patch_hunkFilter.txt");
 		IStorage expStorage = new StringStorage("context.txt");
 		IFilePatch[] patches = ApplyPatchOperation.parsePatch(patchStorage);
-		assertEquals(1, patches.length);
+		assertThat(patches).hasSize(1);
 		IHunk[] hunks = patches[0].getHunks();
-		assertEquals(5, hunks.length);
+		assertThat(hunks).hasSize(5);
 		PatchConfiguration pc = new PatchConfiguration();
 		final IHunk toFilterOut = hunks[3];
 		pc.addHunkFilter(hunk -> hunk != toFilterOut);
 		IFilePatchResult result = patches[0].apply(expStorage, pc, new NullProgressMonitor());
 		IHunk[] rejects = result.getRejects();
-		assertEquals(2, rejects.length);
+		assertThat(rejects).hasSize(2);
 		boolean aFiltered = pc.getHunkFilters()[0].select(rejects[0]);
 		boolean bFiltered = pc.getHunkFilters()[0].select(rejects[1]);
 		assertTrue((aFiltered && !bFiltered) || (!aFiltered && bFiltered));
@@ -216,11 +239,11 @@ public class PatchTest {
 	}
 
 	// Keeps track of the failures
-	private List<AssertionError> failures = new ArrayList<>();
+	private final List<AssertionError> failures = new ArrayList<>();
 
 	@Test
 	public void testPatchdataSubfolders() throws IOException, CoreException {
-		URL patchdataUrl = new URL(PatchUtils.getBundle().getEntry("/"), new Path(PatchUtils.PATCHDATA).toString());
+		URL patchdataUrl = new URL(PatchUtils.getBundle().getEntry("/"), IPath.fromOSString(PatchUtils.PATCHDATA).toString());
 		patchdataUrl = FileLocator.resolve(patchdataUrl);
 
 		Map<String, PatchTestConfiguration> map = null;
@@ -269,41 +292,22 @@ public class PatchTest {
 			}
 		}
 
-		if (failures.isEmpty())
-			return;
-
-		if (failures.size() == 1)
+		if (failures.size() == 1) {
 			throw failures.get(0);
-
-		StringBuilder sb = new StringBuilder(
-				"Failures occured while testing data from patchdata subfolder (Please check log for further details):");
-		for (AssertionError error : failures) {
-			log("org.eclipse.compare.tests", error);
-			sb.append("\n" + error.getMessage());
+		} else if (failures.size() > 1) {
+			AssertionError aggregatedFailure = new AssertionError("Failures occured while testing data from patchdata subfolder");
+			failures.forEach(failure -> aggregatedFailure.addSuppressed(failure));
+			throw aggregatedFailure;
 		}
-		throw new AssertionFailedError(sb.toString());
-	}
-
-	// both copy-pasted from CoreTest
-
-	private void log(String pluginID, IStatus status) {
-		Platform.getLog(Platform.getBundle(pluginID)).log(status);
-	}
-
-	private void log(String pluginID, Throwable e) {
-		log(pluginID, new Status(IStatus.ERROR, pluginID, IStatus.ERROR, "Error", e)); //$NON-NLS-1$
 	}
 
 	/**
-	 * @param patchdataUrl
 	 * @return A map with subfolder name as a key and an array of objects as a
 	 *         value. The first object in the array is another array (of Strings)
 	 *         containing file names for the test. The last value in this array can
 	 *         be <code>null</code> as testing against actual result is optional.
 	 *         The second object is an instance of <code>PatchConfiguration</code>
 	 *         class.
-	 * @throws IOException
-	 * @throws CoreException
 	 */
 	private Map<String, PatchTestConfiguration> extractNamesForJarProtocol(URL patchdataUrl)
 			throws IOException, CoreException {
@@ -356,20 +360,19 @@ public class PatchTest {
 
 		Map<String, PatchTestConfiguration> result = new HashMap<>(); // configuration map
 
-		IPath patchdataFolderPath = new Path(patchdataUrl.getPath());
+		IPath patchdataFolderPath = IPath.fromOSString(patchdataUrl.getPath());
 		File patchdataFolderFile = patchdataFolderPath.toFile();
 		assertTrue(patchdataFolderFile.isDirectory());
 		File[] listOfSubfolders = patchdataFolderFile.listFiles((FileFilter) File::isDirectory);
 		for (File subfolder : listOfSubfolders) {
-			Path pcPath = new Path(subfolder.getPath() + "/" + PATCH_CONFIGURATION);
-			File pcFile = pcPath.toFile();
+			Path pcPath = IPath.fromOSString(subfolder.getPath() + "/" + PATCH_CONFIGURATION).toPath();
 
 			if (subfolder.getName().equals("CVS"))
 				continue;
-			if (pcFile.exists()) {
+			if (Files.exists(pcPath)) {
 				Properties properties = new Properties();
 				try {
-					properties.load(new FileInputStream(pcFile));
+					properties.load(Files.newBufferedReader(pcPath));
 				} catch (IOException e) {
 					fail("IOException occured while loading the Patch Configuration file for " + subfolder.toString());
 				}
@@ -442,7 +445,7 @@ public class PatchTest {
 		IStorage oldStorage = new StringStorage(old);
 		IStorage patchStorage = new StringStorage(patch);
 		IFilePatch[] patches = ApplyPatchOperation.parsePatch(patchStorage);
-		assertTrue(patches.length == 1);
+		assertThat(patches).hasSize(1);
 		IFilePatchResult result = patches[0].apply(oldStorage, new PatchConfiguration(), null);
 		assertTrue(result.hasMatches());
 		assertFalse(result.hasRejects());
@@ -463,7 +466,7 @@ public class PatchTest {
 		}
 
 		FilePatch2[] diffs = patcher.getDiffs();
-		Assert.assertEquals(diffs.length, 1);
+		assertThat(diffs).hasSize(1);
 
 		FileDiffResult diffResult = patcher.getDiffResult(diffs[0]);
 		diffResult.patch(inLines, null);
@@ -471,7 +474,7 @@ public class PatchTest {
 		LineReader expectedContents = new LineReader(PatchUtils.getReader(expt));
 		List<String> expectedLines = expectedContents.readLines();
 
-		Assert.assertArrayEquals(expectedLines.toArray(), inLines.toArray());
+		assertThat(inLines).containsExactlyElementsOf(expectedLines);
 	}
 
 	private void patchWorkspace(String[] originalFiles, String patch, String[] expectedOutcomeFiles, boolean reverse,
@@ -485,10 +488,6 @@ public class PatchTest {
 	/**
 	 * Parses a workspace patch and applies the diffs to the appropriate files
 	 *
-	 * @param msg
-	 * @param originalFiles
-	 * @param patch
-	 * @param expectedOutcomeFiles
 	 * @param patchConfiguration   The patch configuration to use. One of its
 	 *                             parameters is fuzz factor. If it equals
 	 *                             <code>-1</code> it means that the fuzz should be
@@ -498,7 +497,7 @@ public class PatchTest {
 			PatchConfiguration patchConfiguration) {
 
 		// ensure that we have the same number of input files as we have expected files
-		Assert.assertEquals(originalFiles.length, expectedOutcomeFiles.length);
+		assertThat(expectedOutcomeFiles).hasSameSizeAs(originalFiles);
 
 		// Parse the passed in patch and extract all the Diffs
 		WorkspacePatcher patcher = new WorkspacePatcher();
@@ -534,7 +533,7 @@ public class PatchTest {
 			LineReader resultReader = new LineReader(new BufferedReader(new StringReader(resultString)));
 			Object[] result = resultReader.readLines().toArray();
 
-			Assert.assertArrayEquals(msg, expected, result);
+			assertThat(result).as(msg).containsExactly(expected);
 		}
 	}
 }

@@ -15,6 +15,7 @@
  ******************************************************************************/
 package org.eclipse.e4.core.internal.services;
 
+import jakarta.annotation.PostConstruct;
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
@@ -29,7 +30,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
-import javax.annotation.PostConstruct;
 import org.eclipse.e4.core.services.nls.IMessageFactoryService;
 import org.eclipse.e4.core.services.nls.Message;
 import org.eclipse.e4.core.services.nls.Message.ReferenceType;
@@ -50,15 +50,14 @@ public class MessageFactoryServiceImpl implements IMessageFactoryService {
 	private Logger logger;
 
 	// Cache so when multiple instance use the same message class
-	private Map<Object, Reference<Object>> SOFT_CACHE = Collections
+	private final Map<Object, Reference<Object>> SOFT_CACHE = Collections
 			.synchronizedMap(new HashMap<>());
 
-	private Map<Object, Reference<Object>> WEAK_CACHE = Collections
+	private final Map<Object, Reference<Object>> WEAK_CACHE = Collections
 			.synchronizedMap(new HashMap<>());
 
 	private int CLEANUPCOUNT = 0;
 
-	@SuppressWarnings("removal")
 	@Override
 	public <M> M getMessageInstance(final Locale locale, final Class<M> messages,
 			final ResourceBundleProvider provider) {
@@ -209,7 +208,7 @@ public class MessageFactoryServiceImpl implements IMessageFactoryService {
 
 		M instance = null;
 		try {
-			instance = messages.newInstance();
+			instance = messages.getDeclaredConstructor().newInstance();
 			Field[] fields = messages.getDeclaredFields();
 
 			for (Field field : fields) {
@@ -220,15 +219,10 @@ public class MessageFactoryServiceImpl implements IMessageFactoryService {
 					field.set(instance, provider.translate(field.getName()));
 				}
 			}
-		} catch (InstantiationException e) {
+		} catch (Exception e) {
 			Logger log = this.logger;
 			if (log != null) {
 				log.error("Instantiation of messages class failed", e); //$NON-NLS-1$
-			}
-		} catch (IllegalAccessException e) {
-			Logger log = this.logger;
-			if (log != null) {
-				log.error("Failed to access messages class", e); //$NON-NLS-1$
 			}
 		}
 
@@ -251,11 +245,12 @@ public class MessageFactoryServiceImpl implements IMessageFactoryService {
 	 * @param messageClass
 	 *            The type of the message class whose instance is requested.
 	 */
+	@SuppressWarnings("restriction")
 	private void processPostConstruct(Object messageObject, Class<?> messageClass) {
 		if (messageObject != null) {
 			Method[] methods = messageClass.getDeclaredMethods();
 			for (Method method : methods) {
-				if (!method.isAnnotationPresent(PostConstruct.class)) {
+				if (!org.eclipse.e4.core.internal.di.AnnotationLookup.POST_CONSTRUCT.isPresent(method)) {
 					continue;
 				} else {
 					try {

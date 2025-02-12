@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
@@ -38,7 +39,7 @@ public class PessimisticFilesystemProviderPlugin extends AbstractUIPlugin {
 	/*
 	 * The provider listeners
 	 */
-	private List<IResourceStateListener> fListeners;
+	private final List<IResourceStateListener> fListeners;
 
 	/**
 	 * The plugin identifier
@@ -93,7 +94,7 @@ public class PessimisticFilesystemProviderPlugin extends AbstractUIPlugin {
 	 */
 	public void logError(Throwable exception, String message) {
 		String pluginId= getBundle().getSymbolicName();
-		Status status= new Status(Status.ERROR, pluginId, Status.OK, message, exception);
+		Status status= new Status(IStatus.ERROR, pluginId, IStatus.OK, message, exception);
 		getLog().log(status);
 		if (isDebugging()) {
 			System.out.println(message);
@@ -131,8 +132,7 @@ public class PessimisticFilesystemProviderPlugin extends AbstractUIPlugin {
 	public void fireResourcesChanged(IResource[] resources) {
 		if (resources == null || resources.length == 0 || fListeners.isEmpty())
 			return;
-		for (Object element : fListeners) {
-			IResourceStateListener listener= (IResourceStateListener) element;
+		for (IResourceStateListener listener : fListeners) {
 			listener.stateChanged(resources);
 		}
 	}
@@ -140,8 +140,6 @@ public class PessimisticFilesystemProviderPlugin extends AbstractUIPlugin {
 	/**
 	 * Adds the listener to the list of listeners that are notified when
 	 * the repository state of resources change.
-	 *
-	 * @param listener
 	 */
 	public void addProviderListener(IResourceStateListener listener) {
 		if (fListeners.contains(listener))
@@ -153,8 +151,6 @@ public class PessimisticFilesystemProviderPlugin extends AbstractUIPlugin {
 	/**
 	 * Removes the listener from the list of listeners that are notified when
 	 * the repository state of resources change.
-	 *
-	 * @param listener
 	 */
 	public void removeProviderListener(IResourceStateListener listener) {
 		fListeners.remove(listener);

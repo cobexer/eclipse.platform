@@ -13,10 +13,16 @@
  ******************************************************************************/
 package org.eclipse.core.tests.internal.preferences;
 
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.Properties;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.preferences.AbstractPreferenceStorage;
 import org.eclipse.core.tests.runtime.RuntimeTestsPlugin;
 import org.osgi.service.prefs.BackingStoreException;
@@ -44,7 +50,7 @@ public class TestNodeStorage3 extends AbstractPreferenceStorage {
 		if (root == null) {
 			throw new BackingStoreException("Problems getting preference location.");
 		}
-		IPath path = new Path(nodePath);
+		IPath path = IPath.fromOSString(nodePath);
 		return new File(root, path.lastSegment());
 	}
 
@@ -54,11 +60,10 @@ public class TestNodeStorage3 extends AbstractPreferenceStorage {
 		if (!file.exists()) {
 			return null;
 		}
-		InputStream input;
 		try {
-			input = new BufferedInputStream(new FileInputStream(file));
+			InputStream input = Files.newInputStream(file.toPath());
 			return loadProperties(input);
-		} catch (FileNotFoundException e) {
+		} catch (IOException e) {
 			throw new BackingStoreException("Exception while trying to open preference file: " + file.getAbsolutePath(), e);
 		}
 	}

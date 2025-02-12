@@ -27,8 +27,8 @@ import org.eclipse.core.resources.IStorage;
 import org.eclipse.core.resources.IWorkspace;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.team.examples.filesystem.FileSystemPlugin;
@@ -86,24 +86,17 @@ public class ModelObjectDefinitionFile extends ModelFile {
 	}
 
 	private static String[] readLines(IStorage file) throws CoreException {
-		BufferedReader reader = new BufferedReader(new InputStreamReader(file.getContents()));
-		String line = null;
-		List<String> result = new ArrayList<>();
-		try {
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getContents()))) {
+			String line = null;
+			List<String> result = new ArrayList<>();
 			while ((line = reader.readLine()) != null) {
 				result.add(line.trim());
 			}
+			return result.toArray(new String[result.size()]);
 		} catch (IOException e) {
 			throw new CoreException(new Status(IStatus.ERROR, FileSystemPlugin.ID, 0,
 					NLS.bind("Error reading from file {0}", file.getFullPath()), e));
-		} finally {
-			try {
-				reader.close();
-			} catch (IOException e) {
-				// Ignore
-			}
 		}
-		return result.toArray(new String[result.size()]);
 	}
 
 	private void writeLines(String[] strings) throws CoreException {
@@ -129,7 +122,7 @@ public class ModelObjectDefinitionFile extends ModelFile {
 		IStatus status = workspace.validatePath("/" + projectName + "/" + path, IResource.FILE);
 		if (status.isOK()) {
 			IProject project = workspace.getRoot().getProject(projectName);
-			return project.getFile(new Path(path));
+			return project.getFile(IPath.fromOSString(path));
 		}
 		FileSystemPlugin.log(status);
 		return null;

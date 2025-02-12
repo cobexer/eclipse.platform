@@ -121,11 +121,11 @@ public class SynchronizePageConfiguration extends SynchronizePageActionGroup imp
 	private static final int INITIALIZED = 1;
 	private static final int DISPOSED = 2;
 
-	private ISynchronizeParticipant participant;
+	private final ISynchronizeParticipant participant;
 	private ISynchronizePageSite site;
-	private ListenerList<IPropertyChangeListener> propertyChangeListeners = new ListenerList<>(ListenerList.IDENTITY);
-	private ListenerList<SynchronizePageActionGroup> actionContributions = new ListenerList<>(ListenerList.IDENTITY);
-	private Map<String, Object> properties = new HashMap<>();
+	private final ListenerList<IPropertyChangeListener> propertyChangeListeners = new ListenerList<>(ListenerList.IDENTITY);
+	private final ListenerList<SynchronizePageActionGroup> actionContributions = new ListenerList<>(ListenerList.IDENTITY);
+	private final Map<String, Object> properties = new HashMap<>();
 	private int actionState = UNINITIALIZED;
 	private ISynchronizePage page;
 	private IRunnableContext context;
@@ -471,7 +471,6 @@ public class SynchronizePageConfiguration extends SynchronizePageActionGroup imp
 	}
 
 	/**
-	 * @param group
 	 * @return the group id
 	 */
 	public String getGroupId(String group) {
@@ -542,9 +541,6 @@ public class SynchronizePageConfiguration extends SynchronizePageActionGroup imp
 		return 0;
 	}
 
-	/**
-	 * @param style
-	 */
 	public void setViewerStyle(int style) {
 		setProperty(P_VIEWER_STYLE, Integer.valueOf(style));
 	}

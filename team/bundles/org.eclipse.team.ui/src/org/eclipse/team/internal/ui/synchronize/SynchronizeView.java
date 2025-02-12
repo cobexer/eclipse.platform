@@ -338,9 +338,6 @@ public class SynchronizeView extends PageBookView implements ISynchronizeView, I
 		getSite().getPage().removePartListener(fLinkWithEditorListener);
 	}
 
-	/**
-	 *
-	 */
 	private void rememberCurrentParticipant() {
 		IDialogSettings section = getDialogSettings();
 		section.put(KEY_LAST_ACTIVE_PARTICIPANT_ID, activeParticipantRef.getId());
@@ -682,7 +679,7 @@ public class SynchronizeView extends PageBookView implements ISynchronizeView, I
 	@Override
 	public Saveable[] getSaveables() {
 		Set<Saveable> result = new HashSet<>();
-		for (Object element : fPartToParticipant.keySet()) {
+		for (IWorkbenchPart element : fPartToParticipant.keySet()) {
 			SynchronizeViewWorkbenchPart part = (SynchronizeViewWorkbenchPart) element;
 			Saveable saveable = getSaveable(part.getParticipant());
 			if (saveable != null) {
@@ -768,6 +765,8 @@ public class SynchronizeView extends PageBookView implements ISynchronizeView, I
 		case ISynchronizePageConfiguration.CONFLICTING_MODE:
 			syncMode = Utils.getString("action.directionFilterConflicts.tooltip", bundle); //$NON-NLS-1$
 			break;
+		default:
+			throw new IllegalArgumentException(Integer.toString(mode));
 		}
 
 		IViewSite viewSite = getViewSite();
@@ -780,7 +779,7 @@ public class SynchronizeView extends PageBookView implements ISynchronizeView, I
 
 	// copy-pasted from org.eclipse.jdt.internal.ui.packageview.PackageExplorerPart and modified
 
-	private IPartListener2 fLinkWithEditorListener= new IPartListener2() {
+	private final IPartListener2 fLinkWithEditorListener= new IPartListener2() {
 		@Override
 		public void partVisible(IWorkbenchPartReference partRef) {}
 		@Override

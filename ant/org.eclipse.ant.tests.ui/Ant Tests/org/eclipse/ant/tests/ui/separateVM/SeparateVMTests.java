@@ -14,8 +14,14 @@
 
 package org.eclipse.ant.tests.ui.separateVM;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,34 +37,41 @@ import org.eclipse.ant.tests.ui.testplugin.ProjectHelper;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.jdt.launching.IJavaLaunchConfigurationConstants;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.ui.console.IHyperlink;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TestName;
 
 @SuppressWarnings("restriction")
 public class SeparateVMTests extends AbstractAntUIBuildTest {
 
-	protected static final String PLUGIN_VERSION = "org.apache.ant_1.10.12"; //$NON-NLS-1$
+	@Rule
+	public TestName testName = new TestName();
 
-	public SeparateVMTests(String name) {
-		super(name);
+	protected static final String PLUGIN_VERSION;
+
+	static {
+		PLUGIN_VERSION = Platform.getBundle("org.apache.ant").getVersion().toString(); //$NON-NLS-1$
 	}
 
 	/**
 	 * Checks that the expected line count has been reached and if not dump out what
 	 * was tracked to System.err
 	 *
-	 * @param expectedLines
 	 * @since 3.8.200
 	 */
 	void assertLines(int expectedLines) {
 		ConsoleLineTracker.waitForConsole();
 		if (ConsoleLineTracker.getNumberOfMessages() != expectedLines) {
 			List<String> lines = ConsoleLineTracker.getAllMessages();
-			System.out.println("Failed line count from " + getName() + ", tracked lines: "); //$NON-NLS-1$ //$NON-NLS-2$
+			System.out.println("Failed line count from " + testName.getMethodName() + ", tracked lines: "); //$NON-NLS-1$ //$NON-NLS-2$
 			for (String string : lines) {
 				System.out.println('\t' + string);
 			}
@@ -72,6 +85,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and getting messages logged to the
 	 * console.
 	 */
+	@Test
 	public void testBuild() throws CoreException {
 		launch("echoingSepVM"); //$NON-NLS-1$
 		assertLines(6);
@@ -83,6 +97,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and having an extra classpath entry
 	 * designated to be available.
 	 */
+	@Test
 	public void testExtraClasspathEntries() throws CoreException {
 		launch("extensionPointSepVM"); //$NON-NLS-1$
 		assertLines(8);
@@ -94,6 +109,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and having a property designated to be
 	 * available.
 	 */
+	@Test
 	public void testProperties() throws CoreException {
 		launch("extensionPointSepVM"); //$NON-NLS-1$
 		assertLines(8);
@@ -108,6 +124,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and having an task designated to be
 	 * available.
 	 */
+	@Test
 	public void testExtensionPointTask() throws CoreException {
 		launch("extensionPointTaskSepVM"); //$NON-NLS-1$
 		assertLines(7);
@@ -125,6 +142,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and having a type designated to be
 	 * available.
 	 */
+	@Test
 	public void testExtensionPointType() throws CoreException {
 		launch("extensionPointTypeSepVM"); //$NON-NLS-1$
 		assertLines(6);
@@ -138,6 +156,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and that the correct links are in the
 	 * console doc
 	 */
+	@Test
 	public void testLinks() throws CoreException, BadLocationException {
 		launch("echoingSepVM"); //$NON-NLS-1$
 		int offset = 15; // buildfile link
@@ -151,11 +170,13 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	/**
 	 * Tests launching Ant and that build failed presents links to the failures
 	 */
+	@Test
 	public void testBuildFailedLinks() throws CoreException, BadLocationException {
 		launch("102282"); //$NON-NLS-1$
-		int offset = ConsoleLineTracker.getDocument().getLineOffset(9) + 10; // second line of build failed link
-		IHyperlink link = getHyperlink(offset, ConsoleLineTracker.getDocument());
-		assertNotNull("No hyperlink found at offset " + offset, link); //$NON-NLS-1$
+		IDocument document = ConsoleLineTracker.getDocument();
+		int offset = document.getLineOffset(9) + 10; // second line of build failed link
+		IHyperlink link = getHyperlink(offset, document);
+		assertNotNull("No hyperlink found at offset " + offset + "\n" + document, link); //$NON-NLS-1$ //$NON-NLS-2$
 		activateLink(link);
 	}
 
@@ -163,6 +184,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and that the correct colors are in the
 	 * console doc
 	 */
+	@Test
 	public void testColor() throws BadLocationException, CoreException {
 		launch("echoingSepVM"); //$NON-NLS-1$
 		int offset = 15; // buildfile
@@ -179,6 +201,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and that the correct working directory
 	 * is set
 	 */
+	@Test
 	public void testWorkingDirectory() throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration("echoingSepVM"); //$NON-NLS-1$
 		assertNotNull("Could not locate launch configuration for " + "echoingSepVM", config); //$NON-NLS-1$ //$NON-NLS-2$
@@ -198,6 +221,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and that the correct property
 	 * substitutions occur
 	 */
+	@Test
 	public void testPropertySubstitution() throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration("74840SepVM"); //$NON-NLS-1$
 		assertNotNull("Could not locate launch configuration for " + "74840SepVM", config); //$NON-NLS-1$ //$NON-NLS-2$
@@ -216,6 +240,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate VM and getting messages logged to the
 	 * console for project help.
 	 */
+	@Test
 	public void testProjectHelp() throws CoreException {
 		launch("echoingSepVM", "-p"); //$NON-NLS-1$ //$NON-NLS-2$
 		assertLines(14);
@@ -225,10 +250,9 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 
 	/**
 	 * Tests specifying the XmlLogger as a listener (bug 80435)
-	 *
-	 * @throws FileNotFoundException
 	 */
-	public void testXmlLoggerListener() throws CoreException, FileNotFoundException {
+	@Test
+	public void testXmlLoggerListener() throws CoreException, IOException {
 		launch("echoingSepVM", "-listener org.apache.tools.ant.XmlLogger"); //$NON-NLS-1$ //$NON-NLS-2$
 		assertLines(6);
 		assertTrue("Incorrect last message. Should start with Total time:. Message: " //$NON-NLS-1$
@@ -239,7 +263,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 		IFile iFile = getProject().getFolder("buildfiles").getFile("log.xml"); //$NON-NLS-1$ //$NON-NLS-2$
 		assertTrue("Could not find log file named: log.xml", iFile.exists()); //$NON-NLS-1$
 		File file = iFile.getLocation().toFile();
-		String content = getFileContentAsString(file);
+		String content = Files.readString(file.toPath());
 		assertTrue("XML logging file is empty", content.length() > 0); //$NON-NLS-1$
 	}
 
@@ -248,6 +272,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 	 * ANT_HOME is set from the Ant home set for the build and ant.home is set as a
 	 * property. Bug 75729
 	 */
+	@Test
 	public void testAntHome() throws CoreException {
 		launch("environmentVar"); //$NON-NLS-1$
 		assertLines(6);
@@ -275,6 +300,7 @@ public class SeparateVMTests extends AbstractAntUIBuildTest {
 		return msg.endsWith(PLUGIN_VERSION);
 	}
 
+	@Test
 	public void testFailInputHandler() throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration("echoingSepVM"); //$NON-NLS-1$
 		assertNotNull("Could not locate launch configuration for " + "echoingSepVM", config); //$NON-NLS-1$ //$NON-NLS-2$

@@ -34,14 +34,12 @@ public class ErrorUtil {
 		if (userMessage == null)
 			userMessage = exception.getMessage();
 		IStatus status = new Status(IStatus.ERROR, ErrorUtil.class, -1, userMessage, exception);
-		Platform.getLog(ErrorUtil.class).log(status);
+		ILog.of(ErrorUtil.class).log(status);
 	}
 
 	/**
 	 * Shows the provided message using a MessageDialog.
 	 *
-	 * @param message
-	 * @param title
 	 * @see org.eclipse.jface.dialogs.MessageDialog#openError(Shell,String,String)
 	 */
 	public static void showErrorMessage(String message, String title) {

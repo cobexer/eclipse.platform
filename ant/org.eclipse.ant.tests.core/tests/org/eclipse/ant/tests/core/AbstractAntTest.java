@@ -7,14 +7,14 @@
  * https://www.eclipse.org/legal/epl-2.0/
  *
  * SPDX-License-Identifier: EPL-2.0
- * 
+ *
  * Contributors:
  *     IBM Corporation - initial API and implementation
  *******************************************************************************/
 package org.eclipse.ant.tests.core;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.File;
 import java.util.List;
@@ -40,7 +40,6 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.ui.IWorkbench;
@@ -49,7 +48,7 @@ import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.intro.IIntroManager;
 import org.eclipse.ui.intro.IIntroPart;
 import org.eclipse.ui.progress.UIJob;
-import org.junit.Before;
+import org.junit.jupiter.api.BeforeEach;
 
 /**
  * Tests for Ant core
@@ -61,7 +60,7 @@ public abstract class AbstractAntTest {
 	public static final String ANT_TEST_BUILD_LISTENER = "org.eclipse.ant.tests.core.support.testloggers.TestBuildListener"; //$NON-NLS-1$
 	private static boolean welcomeClosed = false;
 
-	@Before
+	@BeforeEach
 	public void setUp() throws Exception {
 		assertProject();
 		assertWelcomeScreenClosed();
@@ -69,8 +68,7 @@ public abstract class AbstractAntTest {
 
 	/**
 	 * Ensure the welcome screen is closed because in 4.x the debug perspective opens a giant fast-view causing issues
-	 * 
-	 * @throws Exception
+	 *
 	 * @since 3.8
 	 */
 	void assertWelcomeScreenClosed() throws Exception {
@@ -100,8 +98,7 @@ public abstract class AbstractAntTest {
 
 	/**
 	 * Asserts that the test project has been created and all testing resources have been loaded each time the {@link #setUp()} method is called
-	 * 
-	 * @throws Exception
+	 *
 	 * @since 3.5
 	 */
 	protected void assertProject() throws Exception {
@@ -126,7 +123,7 @@ public abstract class AbstractAntTest {
 
 	/**
 	 * Returns the 'AntTests' project.
-	 * 
+	 *
 	 * @return the test project
 	 */
 	protected IProject getProject() {
@@ -135,20 +132,20 @@ public abstract class AbstractAntTest {
 
 	protected IFile getBuildFile(String buildFileName) {
 		IFile file = getProject().getFolder(ProjectHelper.BUILDFILES_FOLDER).getFile(buildFileName);
-		assertTrue("Could not find build file named: " + buildFileName, file.exists()); //$NON-NLS-1$
+		assertThat(file).matches(IFile::exists, "exists"); //$NON-NLS-1$
 		return file;
 	}
 
 	protected IFolder getWorkingDirectory(String workingDirectoryName) {
 		IFolder folder = getProject().getFolder(workingDirectoryName);
-		assertTrue("Could not find the working directory named: " + workingDirectoryName, folder.exists()); //$NON-NLS-1$
+		assertThat(folder).matches(IFolder::exists, "exists"); //$NON-NLS-1$
 		return folder;
 	}
 
 	protected IFile checkFileExists(String fileName) throws CoreException {
 		getProject().refreshLocal(IResource.DEPTH_INFINITE, null);
 		IFile file = getProject().getFolder(ProjectHelper.BUILDFILES_FOLDER).getFile(fileName);
-		assertTrue("Could not find file named: " + fileName, file.exists()); //$NON-NLS-1$
+		assertThat(file).matches(IFile::exists, "exists"); //$NON-NLS-1$
 		return file;
 	}
 
@@ -180,7 +177,8 @@ public abstract class AbstractAntTest {
 		} else {
 			runner.run(buildFile, targets, args, workingDir, true);
 		}
-		assertTrue("Build starts did not equal build finishes", AntTestChecker.getDefault().getBuildsStartedCount() == AntTestChecker.getDefault().getBuildsFinishedCount()); //$NON-NLS-1$
+		assertEquals(AntTestChecker.getDefault().getBuildsStartedCount(),
+				AntTestChecker.getDefault().getBuildsFinishedCount(), "Build starts did not equal build finishes"); //$NON-NLS-1$
 	}
 
 	protected TargetInfo[] getTargets(String buildFileName) throws CoreException {
@@ -247,7 +245,7 @@ public abstract class AbstractAntTest {
 
 	/**
 	 * Return the log message n from the last: e.g. getLoggedMessage(0) returns the most recent message
-	 * 
+	 *
 	 * @param n
 	 *              message index
 	 * @return the nth last message
@@ -263,7 +261,7 @@ public abstract class AbstractAntTest {
 	protected void assertSuccessful() {
 		List<String> messages = AntTestChecker.getDefault().getMessages();
 		String success = messages.get(messages.size() - 1);
-		assertEquals("Build was not flagged as successful: " + success, BUILD_SUCCESSFUL, success); //$NON-NLS-1$
+		assertEquals(BUILD_SUCCESSFUL, success, "Build was not flagged as successful"); //$NON-NLS-1$
 	}
 
 	protected String getPropertyFileName() {
@@ -292,7 +290,7 @@ public abstract class AbstractAntTest {
 		AntCorePreferences prefs = AntCorePlugin.getPlugin().getPreferences();
 		IAntClasspathEntry[] entries = prefs.getAntHomeClasspathEntries();
 		IAntClasspathEntry antjar = entries[0];
-		IPath antHomePath = new Path(antjar.getEntryURL().getFile());
+		IPath antHomePath = IPath.fromOSString(antjar.getEntryURL().getFile());
 		antHomePath = antHomePath.removeLastSegments(1);
 		return antHomePath.toFile().getAbsolutePath();
 	}

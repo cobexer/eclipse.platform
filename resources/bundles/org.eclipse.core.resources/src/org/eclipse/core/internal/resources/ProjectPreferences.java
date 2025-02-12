@@ -17,16 +17,40 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map.Entry;
-import org.eclipse.core.internal.preferences.*;
+import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import org.eclipse.core.internal.preferences.EclipsePreferences;
+import org.eclipse.core.internal.preferences.ExportedPreferences;
+import org.eclipse.core.internal.preferences.PreferencesService;
+import org.eclipse.core.internal.preferences.SortedProperties;
 import org.eclipse.core.internal.utils.Messages;
 import org.eclipse.core.internal.utils.Policy;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceRuleFactory;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.ProjectScope;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ICoreRunnable;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.MultiRule;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
@@ -49,26 +73,26 @@ public class ProjectPreferences extends EclipsePreferences {
 	/**
 	 * Cache which nodes have been loaded from disk
 	 */
-	protected static Set<String> loadedNodes = Collections.synchronizedSet(new HashSet<>());
+	private static final Set<String> loadedNodes = ConcurrentHashMap.newKeySet();
 	private IFile file;
-	private boolean initialized = false;
+	private volatile boolean initialized;
 	/**
 	 * Flag indicating that this node is currently reading values from disk,
 	 * to avoid flushing during a read.
 	 */
-	private boolean isReading;
+	private volatile boolean isReading;
 	/**
 	 * Flag indicating that this node is currently writing values to disk,
 	 * to avoid re-reading after the write completes.
 	 */
-	private boolean isWriting;
+	private volatile boolean isWriting;
 	private IEclipsePreferences loadLevel;
-	private IProject project;
-	private String qualifier;
+	private final IProject project;
+	private final String qualifier;
 
 	// cache
-	private int segmentCount;
-	private Workspace workspace;
+	private final int segmentCount;
+	private volatile Workspace workspace;
 
 	static void deleted(IFile file) throws CoreException {
 		IPath path = file.getFullPath();
@@ -158,14 +182,14 @@ public class ProjectPreferences extends EclipsePreferences {
 	 */
 	static IFile getFile(IFolder folder, String qualifier) {
 		Assert.isLegal(folder.getName().equals(DEFAULT_PREFERENCES_DIRNAME));
-		return folder.getFile(new Path(qualifier).addFileExtension(PREFS_FILE_EXTENSION));
+		return folder.getFile(IPath.fromOSString(qualifier).addFileExtension(PREFS_FILE_EXTENSION));
 	}
 
 	/*
 	 * Return the preferences file for the given project and qualifier.
 	 */
 	static IFile getFile(IProject project, String qualifier) {
-		return project.getFile(new Path(DEFAULT_PREFERENCES_DIRNAME).append(qualifier).addFileExtension(PREFS_FILE_EXTENSION));
+		return project.getFile(IPath.fromOSString(DEFAULT_PREFERENCES_DIRNAME).append(qualifier).addFileExtension(PREFS_FILE_EXTENSION));
 	}
 
 	private static Properties loadProperties(IFile file) throws BackingStoreException {
@@ -226,7 +250,6 @@ public class ProjectPreferences extends EclipsePreferences {
 	 * @param current in-memory state
 	 * @param file    new state on the disk to be loaded
 	 * @return new node that contains everything required to apply new state
-	 * @throws BackingStoreException
 	 * @see PreferencesService#applyPreferences(IExportedPreferences)
 	 */
 	private static ExportedPreferences overridingPreferences(ProjectPreferences current, IFile file)
@@ -313,13 +336,7 @@ public class ProjectPreferences extends EclipsePreferences {
 
 	private static void removeLoadedNodes(Preferences node) {
 		String path = node.absolutePath();
-		synchronized (loadedNodes) {
-			for (Iterator<String> i = loadedNodes.iterator(); i.hasNext();) {
-				String key = i.next();
-				if (key.startsWith(path))
-					i.remove();
-			}
-		}
+		loadedNodes.removeIf(key -> key.startsWith(path));
 	}
 
 	public static void updatePreferences(IFile file) throws CoreException {
@@ -362,6 +379,9 @@ public class ProjectPreferences extends EclipsePreferences {
 	 */
 	public ProjectPreferences() {
 		super(null, null);
+		qualifier = null;
+		project = null;
+		segmentCount = 0;
 	}
 
 	private ProjectPreferences(EclipsePreferences parent, String name, Workspace workspace) {
@@ -372,17 +392,18 @@ public class ProjectPreferences extends EclipsePreferences {
 		String path = absolutePath();
 		segmentCount = getSegmentCount(path);
 
-		if (segmentCount == 1)
+		if (segmentCount == 1) {
+			qualifier = null;
+			project = null;
 			return;
+		}
 
 		// cache the project name
 		String projectName = getSegment(path, 1);
-		if (projectName != null)
-			project = getWorkspace().getRoot().getProject(projectName);
+		project = (projectName != null) ? getWorkspace().getRoot().getProject(projectName) : null;
 
 		// cache the qualifier
-		if (segmentCount > 2)
-			qualifier = getSegment(path, 2);
+		qualifier = (segmentCount > 2) ? getSegment(path, 2).intern() : null;
 	}
 
 	@Override
@@ -685,7 +706,7 @@ public class ProjectPreferences extends EclipsePreferences {
 					String fileLineSeparator = fileInWorkspace.getLineSeparator(true);
 					if (!systemLineSeparator.equals(fileLineSeparator))
 						s = s.replaceAll(systemLineSeparator, fileLineSeparator);
-					InputStream input = new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
+					byte[] input = s.getBytes(StandardCharsets.UTF_8);
 					// make sure that preference folder and file are in sync
 					fileInWorkspace.getParent().refreshLocal(IResource.DEPTH_ZERO, null);
 					fileInWorkspace.refreshLocal(IResource.DEPTH_ZERO, null);
@@ -724,14 +745,14 @@ public class ProjectPreferences extends EclipsePreferences {
 			};
 			//don't bother with scheduling rules if we are already inside an operation
 			try {
-				Workspace workspace = getWorkspace();
-				if (workspace.getWorkManager().isLockAlreadyAcquired()) {
+				Workspace ws = getWorkspace();
+				if (ws.getWorkManager().isLockAlreadyAcquired()) {
 					operation.run(null);
 				} else {
-					IResourceRuleFactory factory = workspace.getRuleFactory();
+					IResourceRuleFactory factory = ws.getRuleFactory();
 					// we might: delete the file, create the .settings folder, create the file, modify the file, or set derived flag for the file.
 					ISchedulingRule rule = MultiRule.combine(new ISchedulingRule[] {factory.deleteRule(fileInWorkspace), factory.createRule(fileInWorkspace.getParent()), factory.modifyRule(fileInWorkspace), factory.derivedRule(fileInWorkspace)});
-					workspace.run(operation, rule, IResource.NONE, null);
+					ws.run(operation, rule, IResource.NONE, null);
 					if (bse[0] != null)
 						throw bse[0];
 				}

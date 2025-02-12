@@ -39,11 +39,10 @@ public class TeamAdapterFactory implements IAdapterFactory {
 			IFileRevision.class
 		};
 
-	private DiffNodeWorkbenchAdapter diffNodeAdapter = new DiffNodeWorkbenchAdapter();
+	private final DiffNodeWorkbenchAdapter diffNodeAdapter = new DiffNodeWorkbenchAdapter();
 
 	private static final ISynchronizationCompareAdapter COMPARE_ADAPTER = new ResourceModelPersistenceAdapter();
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T getAdapter(Object adaptableObject, Class<T> adapterType) {
 		if(adaptableObject instanceof DiffNode && adapterType == IWorkbenchAdapter.class) {

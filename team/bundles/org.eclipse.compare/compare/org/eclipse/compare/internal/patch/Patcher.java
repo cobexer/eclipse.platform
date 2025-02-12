@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,7 +52,6 @@ import org.eclipse.core.runtime.Assert;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.preferences.IScopeContext;
@@ -90,10 +88,10 @@ public class Patcher implements IHunkFilter {
 	private FilePatch2[] fDiffs;
 	private IResource fTarget;
 	// patch options
-	private Set<Object> disabledElements = new HashSet<>();
-	private Map<FilePatch2, FileDiffResult> diffResults = new HashMap<>();
+	private final Set<Object> disabledElements = new HashSet<>();
+	private final Map<FilePatch2, FileDiffResult> diffResults = new HashMap<>();
 	private final Map<FilePatch2, byte[]> contentCache = new HashMap<>();
-	private Set<Hunk> mergedHunks = new HashSet<>();
+	private final Set<Hunk> mergedHunks = new HashSet<>();
 
 	private final PatchConfiguration configuration;
 	private boolean fGenerateRejectFile = false;
@@ -218,6 +216,8 @@ public class Patcher implements IHunkFilter {
 					case '-':
 						removedLines++;
 						continue;
+					default:
+						break;
 					}
 				}
 			}
@@ -251,10 +251,8 @@ public class Patcher implements IHunkFilter {
 			for (i= 0; i < fDiffs.length; i++) {
 				FilePatch2 diff= fDiffs[i];
 				if (isEnabled(diff)) {
-					switch (diff.getDiffType(isReversed())) {
-					case FilePatch2.CHANGE:
+					if (diff.getDiffType(isReversed()) == FilePatch2.CHANGE) {
 						list.add(createPath(container, getPath(diff)));
-						break;
 					}
 				}
 			}
@@ -306,6 +304,8 @@ public class Patcher implements IHunkFilter {
 						store(LineReader.createString(isPreserveLineDelimeters(), result), file, SubMonitor.convert(pm, workTicks));
 					workTicks-= WORK_UNIT;
 					break;
+				default:
+					throw new IllegalArgumentException(Integer.toString(type));
 				}
 
 				if (isGenerateRejectFile() && failed.size() > 0) {
@@ -339,7 +339,7 @@ public class Patcher implements IHunkFilter {
 			pp= path.removeLastSegments(1);
 			pp= pp.append(path.lastSegment() + REJECT_FILE_EXTENSION);
 		} else
-			pp= new Path(path.lastSegment() + REJECT_FILE_EXTENSION);
+			pp= IPath.fromOSString(path.lastSegment() + REJECT_FILE_EXTENSION);
 		return pp;
 	}
 
@@ -401,20 +401,14 @@ public class Patcher implements IHunkFilter {
 	}
 
 	protected void store(byte[] bytes, IFile file, IProgressMonitor pm) throws CoreException {
-		InputStream is= new ByteArrayInputStream(bytes);
-		try {
+		try (InputStream is = new ByteArrayInputStream(bytes)) {
 			if (file.exists()) {
 				file.setContents(is, false, true, pm);
 			} else {
 				file.create(is, false, pm);
 			}
-		} finally {
-			if (is != null)
-				try {
-					is.close();
-				} catch(IOException ex) {
-					// silently ignored
-				}
+		} catch (IOException closeException) {
+			// silently ignored
 		}
 	}
 
@@ -426,11 +420,9 @@ public class Patcher implements IHunkFilter {
 		if (failedHunks.size() <= 0)
 			return null;
 
-		String lineSeparator= System.getProperty("line.separator"); //$NON-NLS-1$
+		String lineSeparator = System.lineSeparator();
 		StringBuilder sb= new StringBuilder();
-		Iterator<Hunk> iter= failedHunks.iterator();
-		while (iter.hasNext()) {
-			Hunk hunk= iter.next();
+		for (Hunk hunk : failedHunks) {
 			sb.append(hunk.getRejectedDescription());
 			sb.append(lineSeparator);
 			sb.append(hunk.getContent());
@@ -481,7 +473,6 @@ public class Patcher implements IHunkFilter {
 	/**
 	 * Iterates through all of the resources contained in the Patch Wizard target
 	 * and looks to for a match to the passed in file
-	 * @param path
 	 * @return IFile which matches the passed in path or null if none found
 	 */
 	public IFile existsInTarget(IPath path) {
@@ -499,8 +490,6 @@ public class Patcher implements IHunkFilter {
 
 	/**
 	 * Returns true if path completely matches the end of fullpath
-	 * @param fullpath
-	 * @param path
 	 * @return true if path matches, false otherwise
 	 */
 	private boolean matches(IPath fullpath, IPath path) {

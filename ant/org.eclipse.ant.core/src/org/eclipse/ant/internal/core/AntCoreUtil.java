@@ -26,7 +26,6 @@ import java.util.Properties;
 import org.eclipse.ant.core.AntCorePlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.variables.IStringVariableManager;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.osgi.framework.BundleContext;
@@ -114,15 +113,15 @@ public class AntCoreUtil {
 	}
 
 	public static File getFileRelativeToBaseDir(String fileName, String base, String buildFileLocation) {
-		IPath path = new Path(fileName);
+		IPath path = IPath.fromOSString(fileName);
 		if (!path.isAbsolute()) {
 			if (base != null) {
 				File baseDir = new File(base);
 				// relative to the base dir
-				path = new Path(baseDir.getAbsolutePath());
+				path = IPath.fromOSString(baseDir.getAbsolutePath());
 			} else {
 				// relative to the build file location
-				path = new Path(buildFileLocation);
+				path = IPath.fromOSString(buildFileLocation);
 				path = path.removeLastSegments(1);
 			}
 			path = path.addTrailingSeparator();
@@ -139,9 +138,7 @@ public class AntCoreUtil {
 	 *            the names of the properties files to load from
 	 * @param base
 	 *            the base directory name
-	 * @param buildFileLocation
 	 * @return a list of {@link Properties} objects for each filename
-	 * @throws IOException
 	 */
 	public static List<Properties> loadPropertyFiles(List<String> fileNames, String base, String buildFileLocation) throws IOException {
 		ArrayList<Properties> allProperties = new ArrayList<>(fileNames.size());

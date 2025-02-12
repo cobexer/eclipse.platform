@@ -148,10 +148,10 @@ public class SyncInfo implements IAdaptable {
 	/*====================================================================
 	 * Members:
 	 *====================================================================*/
-	private IResource local;
-	private IResourceVariant base;
-	private IResourceVariant remote;
-	private IResourceVariantComparator comparator;
+	private final IResource local;
+	private final IResourceVariant base;
+	private final IResourceVariant remote;
+	private final IResourceVariantComparator comparator;
 
 	private int syncKind;
 
@@ -364,6 +364,7 @@ public class SyncInfo implements IAdaptable {
 	 * @param kind the sync kind obtained from a <code>SyncInfo</code>
 	 * @return a displayable string that describes the kind
 	 */
+	@SuppressWarnings("incomplete-switch")
 	public static String kindToString(int kind) {
 		String label = ""; //$NON-NLS-1$
 		if(kind==IN_SYNC) {

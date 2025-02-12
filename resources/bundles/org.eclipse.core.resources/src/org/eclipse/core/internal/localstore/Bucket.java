@@ -16,14 +16,29 @@
  *******************************************************************************/
 package org.eclipse.core.internal.localstore;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.ref.SoftReference;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.eclipse.core.internal.resources.ResourceException;
 import org.eclipse.core.internal.resources.ResourceStatus;
 import org.eclipse.core.internal.utils.Messages;
 import org.eclipse.core.resources.IResourceStatus;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -58,7 +73,7 @@ public abstract class Bucket {
 		 * Logical path of the object we are storing history for. This does not
 		 * correspond to a file system path.
 		 */
-		private IPath path;
+		private final IPath path;
 
 		/**
 		 * State for this entry. Possible values are STATE_CLEAR, STATE_DIRTY and STATE_DELETED.
@@ -156,28 +171,28 @@ public abstract class Bucket {
 	 * where the key is the path of the object we are storing history for, and
 	 * the value is the history entry data (UUID,timestamp) pairs.
 	 */
-	private final Map<String, Object> entries;
-	private SoftReference<Map<Object, Map<String, Object>>> entriesCache;
+	private final ConcurrentMap<String, Object> entries;
+	private volatile SoftReference<Map<String, Map<String, Object>>> entriesCache;
 
 	/**
 	 * The file system location of this bucket index file.
 	 */
-	private File location;
+	private volatile File location;
 	/**
 	 * Whether the in-memory bucket is dirty and needs saving
 	 */
-	private boolean needSaving = false;
+	private volatile boolean needSaving = false;
 	/**
 	 * The project name for the bucket currently loaded. <code>null</code> if this is the root bucket.
 	 */
-	protected String projectName;
+	protected volatile String projectName;
 
 	public Bucket() {
 		this(false);
 	}
 
 	public Bucket(boolean cacheEntries) {
-		this.entries = new HashMap<>();
+		this.entries = new ConcurrentHashMap<>();
 		if (cacheEntries) {
 			entriesCache = new SoftReference<>(null);
 		}
@@ -199,7 +214,7 @@ public abstract class Bucket {
 		try {
 			for (Iterator<Map.Entry<String, Object>> i = entries.entrySet().iterator(); i.hasNext();) {
 				Map.Entry<String, Object> mapEntry = i.next();
-				IPath path = new Path(mapEntry.getKey());
+				IPath path = IPath.fromOSString(mapEntry.getKey());
 				// check whether the filter applies
 				int matchingSegments = filter.matchingFirstSegments(path);
 				if (!filter.isPrefixOf(path) || path.segmentCount() - matchingSegments > depth)
@@ -319,7 +334,7 @@ public abstract class Bucket {
 				loadedEntries = loadEntries(this.location);
 			} else {
 				if (isCachingEnabled()) {
-					Map<Object, Map<String, Object>> cache = entriesCache.get();
+					Map<String, Map<String, Object>> cache = entriesCache.get();
 					if (cache != null) {
 						loadedEntries = cache.get(createBucketKey());
 					}
@@ -342,7 +357,7 @@ public abstract class Bucket {
 		return entriesCache != null;
 	}
 
-	private Object createBucketKey() {
+	private String createBucketKey() {
 		return this.location == null ? null : this.location.getAbsolutePath();
 	}
 
@@ -365,6 +380,9 @@ public abstract class Bucket {
 				resultEntries.put(readEntryKey(source), readEntryValue(source));
 			}
 			return resultEntries;
+		} catch (RuntimeException e) {
+			String msg = NLS.bind(Messages.properties_readProperties, indexFile.toString());
+			throw new ResourceException(IResourceStatus.FAILED_READ_METADATA, null, msg, e);
 		}
 	}
 
@@ -383,25 +401,24 @@ public abstract class Bucket {
 	 * Saves this bucket's contents back to its location.
 	 */
 	public void save() throws CoreException {
+		// We do need to make a copy of this.entries for caching, because that instance is reused
+		// And we need atomic copy to prevent concurrent modification during save();
+		Map<String, Object> entriesSnapshot = Map.copyOf(this.entries);
 		if (isCachingEnabled()) {
-			Object key = createBucketKey();
+			String key = createBucketKey();
 			if (key != null) {
-				// we do need to make a copy from this.entries because that instance is reused
-				@SuppressWarnings("unchecked")
-				java.util.Map.Entry<String, Object>[] a = new java.util.Map.Entry[0];
-				java.util.Map<String, Object> denseCopy = java.util.Map.ofEntries(this.entries.entrySet().toArray(a));
-				Map<Object, Map<String, Object>> cache = entriesCache.get();
+				Map<String, Map<String, Object>> cache = entriesCache.get();
 				if (cache == null) {
 					cache = new WeakHashMap<>();
 					entriesCache = new SoftReference<>(cache);
 				}
-				cache.put(key, denseCopy); // remember the entries in cache
+				cache.put(key, entriesSnapshot); // remember the entries in cache
 			}
 		}
 		if (!needSaving)
 			return;
 		try {
-			if (entries.isEmpty()) {
+			if (entriesSnapshot.isEmpty()) {
 				needSaving = false;
 				cleanUp(location);
 				return;
@@ -413,8 +430,8 @@ public abstract class Bucket {
 			parent.mkdirs();
 			try (DataOutputStream destination = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(location), 8192))) {
 				destination.write(getVersion());
-				destination.writeInt(entries.size());
-				for (java.util.Map.Entry<String, Object> entry : entries.entrySet()) {
+				destination.writeInt(entriesSnapshot.size());
+				for (java.util.Map.Entry<String, Object> entry : entriesSnapshot.entrySet()) {
 					writeEntryKey(destination, entry.getKey());
 					writeEntryValue(destination, entry.getValue());
 				}

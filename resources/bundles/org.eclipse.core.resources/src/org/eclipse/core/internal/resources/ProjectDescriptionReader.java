@@ -19,20 +19,46 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.*;
-import javax.xml.parsers.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.StringTokenizer;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import org.eclipse.core.filesystem.URIUtil;
 import org.eclipse.core.internal.events.BuildCommand;
 import org.eclipse.core.internal.localstore.SafeFileInputStream;
 import org.eclipse.core.internal.utils.Messages;
 import org.eclipse.core.internal.utils.Policy;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.FileInfoMatcherDescription;
+import org.eclipse.core.resources.ICommand;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.osgi.util.NLS;
-import org.xml.sax.*;
+import org.xml.sax.Attributes;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.ErrorHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
 import org.xml.sax.helpers.DefaultHandler;
 
 /**
@@ -107,12 +133,10 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 	ProjectDescription projectDescription = null;
 
 	protected int state = S_INITIAL;
-	private Workspace workspace;
+	private final Workspace workspace;
 
 	/**
 	 * Returns the SAXParser to use when parsing project description files.
-	 * @throws ParserConfigurationException
-	 * @throws SAXException
 	 */
 	private static synchronized SAXParser createParser(Workspace workspace)
 			throws ParserConfigurationException, SAXException {
@@ -127,17 +151,18 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 
 	/**
 	 * Returns the SAXParserFactory to use when parsing project description files.
-	 * @throws ParserConfigurationException
 	 */
 	private static synchronized SAXParserFactory createParserFactory() throws ParserConfigurationException {
 		if (singletonParserFactory == null) {
-			singletonParserFactory = SAXParserFactory.newInstance();
-			singletonParserFactory.setNamespaceAware(true);
+			@SuppressWarnings("restriction")
+			SAXParserFactory f = org.eclipse.core.internal.runtime.XmlProcessorFactory
+					.createSAXFactoryWithErrorOnDOCTYPE(true);
 			try {
-				singletonParserFactory.setFeature("http://xml.org/sax/features/string-interning", true); //$NON-NLS-1$
+				f.setFeature("http://xml.org/sax/features/string-interning", true); //$NON-NLS-1$
 			} catch (SAXException e) {
 				// In case support for this feature is removed
 			}
+			singletonParserFactory = f;
 		}
 		return singletonParserFactory;
 	}
@@ -219,13 +244,13 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 			StringTokenizer tokens = new StringTokenizer(charBuffer.toString(), ","); //$NON-NLS-1$
 			while (tokens.hasMoreTokens()) {
 				String next = tokens.nextToken();
-				if (next.toLowerCase().equals(TRIGGER_AUTO)) {
+				if (next.equalsIgnoreCase(TRIGGER_AUTO)) {
 					command.setBuilding(IncrementalProjectBuilder.AUTO_BUILD, true);
-				} else if (next.toLowerCase().equals(TRIGGER_CLEAN)) {
+				} else if (next.equalsIgnoreCase(TRIGGER_CLEAN)) {
 					command.setBuilding(IncrementalProjectBuilder.CLEAN_BUILD, true);
-				} else if (next.toLowerCase().equals(TRIGGER_FULL)) {
+				} else if (next.equalsIgnoreCase(TRIGGER_FULL)) {
 					command.setBuilding(IncrementalProjectBuilder.FULL_BUILD, true);
-				} else if (next.toLowerCase().equals(TRIGGER_INCREMENTAL)) {
+				} else if (next.equalsIgnoreCase(TRIGGER_INCREMENTAL)) {
 					command.setBuilding(IncrementalProjectBuilder.INCREMENTAL_BUILD, true);
 				}
 			}
@@ -597,7 +622,6 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 	/**
 	 * For backwards compatibility, link locations in the local file system are represented
 	 * in the project description under the "location" tag.
-	 * @param elementName
 	 */
 	private void endLinkLocation(String elementName) {
 		if (elementName.equals(LOCATION)) {
@@ -608,7 +632,8 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 			if (oldLocation != null) {
 				parseProblem(NLS.bind(Messages.projRead_badLocation, oldLocation, newLocation));
 			} else {
-				((LinkDescription) objectStack.peek()).setLocationURI(URIUtil.toURI(Path.fromPortableString(newLocation)));
+				((LinkDescription) objectStack.peek())
+						.setLocationURI(URIUtil.toURI(IPath.fromPortableString(newLocation)));
 			}
 			state = S_LINK;
 		}
@@ -617,7 +642,6 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 	/**
 	 * Link locations that are not stored in the local file system are represented
 	 * in the project description under the "locationURI" tag.
-	 * @param elementName
 	 */
 	private void endLinkLocationURI(String elementName) {
 		if (elementName.equals(LOCATION_URI)) {
@@ -641,7 +665,7 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 
 	private void endLinkPath(String elementName) {
 		if (elementName.equals(NAME)) {
-			IPath newPath = new Path(charBuffer.toString());
+			IPath newPath = IPath.fromOSString(charBuffer.toString());
 			// objectStack has a LinkDescription on it. Set the name
 			// on this LinkDescription.
 			IPath oldPath = ((LinkDescription) objectStack.peek()).getProjectRelativePath();
@@ -704,7 +728,7 @@ public class ProjectDescriptionReader extends DefaultHandler implements IModelOb
 
 	private void endFilterPath(String elementName) {
 		if (elementName.equals(NAME)) {
-			IPath newPath = new Path(charBuffer.toString());
+			IPath newPath = IPath.fromOSString(charBuffer.toString());
 			// objectStack has a FilterDescription on it. Set the name
 			// on this FilterDescription.
 			IResource oldResource = ((FilterDescription) objectStack.peek()).getResource();

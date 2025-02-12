@@ -14,21 +14,27 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.utils;
 
-import java.util.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomString;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import org.eclipse.core.internal.utils.ObjectMap;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.junit.jupiter.api.Test;
 
-public class ObjectMapTest extends ResourceTest {
+public class ObjectMapTest {
 	private static final int MAXIMUM = 100;
-	private Object[] values;
 
+	@Test
 	public void testPut() {
-
 		// create the objects to insert into the map
 		ObjectMap<Integer, Object> map = new ObjectMap<>();
-		int max = 100;
-		Object[] values = new Object[max];
-		for (int i = 0; i < max; i++) {
+		Object[] values = new Object[MAXIMUM];
+		for (int i = 0; i < MAXIMUM; i++) {
 			values[i] = Long.valueOf(System.currentTimeMillis());
 		}
 
@@ -36,80 +42,90 @@ public class ObjectMapTest extends ResourceTest {
 		for (int i = 0; i < values.length; i++) {
 			Integer key = Integer.valueOf(i);
 			map.put(key, values[i]);
-			assertTrue("2.0." + i, map.containsKey(key));
-			assertTrue("2.1." + i, map.containsValue(values[i]));
-			assertEquals("2.2." + i, i + 1, map.size());
+			assertThat(map).containsKey(key);
+			assertThat(map).containsValue(values[i]);
+			assertThat(map).hasSize(i + 1);
 		}
 
 		// make sure they are all still there
-		assertEquals("3.0", max, map.size());
+		assertThat(map).hasSize(MAXIMUM);
 		for (int i = 0; i < values.length; i++) {
 			Integer key = Integer.valueOf(i);
-			assertTrue("3.1." + i, map.containsKey(key));
-			assertNotNull("3.2." + i, map.get(key));
+			assertThat(map).containsKey(key);
+			assertNotNull(map.get(key), "" + i);
 		}
 	}
 
+	@Test
 	public void testPutEmptyMap() {
 		ObjectMap<Object, Object> map = new ObjectMap<>(new HashMap<>());
 		map.put(new Object(), new Object());
 	}
 
+	@Test
 	public void testRemove() {
-
 		// populate the map
-		ObjectMap<Integer, Object> map = populateMap(MAXIMUM);
+		Object[] values = new Object[MAXIMUM];
+		ObjectMap<Integer, Object> map = populateMap(values);
 
 		// remove each element
 		for (int i = MAXIMUM - 1; i >= 0; i--) {
-			Object key = Integer.valueOf(i);
+			Integer key = Integer.valueOf(i);
 			map.remove(key);
-			assertTrue("2.0." + i, !map.containsKey(key));
-			assertEquals("2.1," + i, i, map.size());
+			assertThat(map).doesNotContainKey(key);
+			assertThat(map).hasSize(i);
 			// check that the others still exist
 			for (int j = 0; j < i; j++) {
-				assertTrue("2.2." + j, map.containsKey(Integer.valueOf(j)));
+				assertThat(map).containsKey(Integer.valueOf(j));
 			}
 		}
 
 		// all gone?
-		assertEquals("3.0", 0, map.size());
+		assertThat(map).isEmpty();
 	}
 
+	@Test
 	public void testContains() {
-		ObjectMap<Integer, Object> map = populateMap(MAXIMUM);
+		Object[] values = new Object[MAXIMUM];
+		ObjectMap<Integer, Object> map = populateMap(values);
 
 		for (int i = 0; i < MAXIMUM; i++) {
-			assertTrue("2.0." + i, map.containsKey(Integer.valueOf(i)));
-			assertTrue("2.1." + i, map.containsValue(values[i]));
+			assertThat(map).containsKey(Integer.valueOf(i));
+			assertThat(map).containsValue(values[i]);
 		}
 
-		assertFalse("3.0", map.containsKey(Integer.valueOf(MAXIMUM + 1)));
-		assertFalse("3.1", map.containsKey(Integer.valueOf(-1)));
-		assertFalse("3.2", map.containsValue(null));
-		assertFalse("3.3", map.containsValue(getRandomString()));
+		assertThat(map).doesNotContainKey(Integer.valueOf(MAXIMUM + 1));
+		assertThat(map).doesNotContainKey(Integer.valueOf(-1));
+		assertThat(map).doesNotContainValue(null);
+		assertThat(map).doesNotContainValue(createRandomString());
 	}
 
+	@Test
 	public void testValues() {
-		ObjectMap<Integer, Object> map = populateMap(MAXIMUM);
+		Object[] values = new Object[MAXIMUM];
+		ObjectMap<Integer, Object> map = populateMap(values);
 
 		Collection<Object> result = map.values();
 		for (int i = 0; i < MAXIMUM; i++) {
-			assertTrue("2.0." + i, result.contains(values[i]));
+			assertThat(result).contains(values[i]);
 		}
 	}
 
+	@Test
 	public void testKeySet() {
-		ObjectMap<Integer, Object> map = populateMap(MAXIMUM);
+		Object[] values = new Object[MAXIMUM];
+		ObjectMap<Integer, Object> map = populateMap(values);
 		Set<Integer> keys = map.keySet();
-		assertEquals("1.0", MAXIMUM, keys.size());
+		assertThat(keys).hasSize(MAXIMUM);
 	}
 
+	@Test
 	public void testEntrySet() {
-		ObjectMap<Integer, Object> map = populateMap(MAXIMUM);
+		Object[] values = new Object[MAXIMUM];
+		ObjectMap<Integer, Object> map = populateMap(values);
 		Set<Map.Entry<Integer, Object>> entries = map.entrySet();
 		for (int i = 0; i < MAXIMUM; i++) {
-			assertTrue("1.0." + i, contains(entries, values[i]));
+			assertTrue(contains(entries, values[i]), "" + i);
 		}
 	}
 
@@ -125,34 +141,26 @@ public class ObjectMapTest extends ResourceTest {
 		return false;
 	}
 
-	private ObjectMap<Integer, Object> populateMap(int max) {
+	private ObjectMap<Integer, Object> populateMap(Object[] values) {
 		// populate the map
 		ObjectMap<Integer, Object> map = new ObjectMap<>();
-		values = new Object[max];
-		for (int i = 0; i < max; i++) {
+		for (int i = 0; i < values.length; i++) {
 			values[i] = Long.valueOf(System.currentTimeMillis());
 			map.put(Integer.valueOf(i), values[i]);
 		}
-		assertEquals("#populateMap", max, map.size());
+		assertThat(values).hasSize(map.size());
 		return map;
 	}
 
 	/*
 	 * Bug 62231 - empty ObjectMap.toHashMap() causes NullPointerException
 	 */
+	@Test
 	public void testBug_62231() {
 		ObjectMap<Object, Object> map = new ObjectMap<>();
-		try {
-			map.entrySet();
-		} catch (NullPointerException e) {
-			fail("1.0");
-		}
+		map.entrySet();
 		map.clear();
-		try {
-			map.entrySet();
-		} catch (NullPointerException e) {
-			fail("1.1");
-		}
+		map.entrySet();
 
 	}
 }

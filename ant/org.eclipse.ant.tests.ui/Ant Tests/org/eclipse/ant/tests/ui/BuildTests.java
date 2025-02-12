@@ -14,8 +14,14 @@
 
 package org.eclipse.ant.tests.ui;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -30,19 +36,18 @@ import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import org.eclipse.jface.text.BadLocationException;
+import org.eclipse.jface.text.IDocument;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.ui.console.IHyperlink;
+import org.junit.Test;
 
 @SuppressWarnings("restriction")
 public class BuildTests extends AbstractAntUIBuildTest {
 
-	public BuildTests(String name) {
-		super(name);
-	}
-
 	/**
 	 * Tests launching Ant and getting messages logged to the console.
 	 */
+	@Test
 	public void testOutput() throws CoreException {
 		launch("echoing"); //$NON-NLS-1$
 		assertEquals("Incorrect number of messages logged for build. Should be 8. Was " //$NON-NLS-1$
@@ -56,6 +61,7 @@ public class BuildTests extends AbstractAntUIBuildTest {
 	 * This build will fail. With verbose on you should be presented with a full
 	 * stack trace. Bug 82833
 	 */
+	@Test
 	public void testVerboseStackTrace() throws Exception {
 		IEclipsePreferences prefs = InstanceScope.INSTANCE.getNode("org.eclipse.ui.monitoring"); //$NON-NLS-1$
 		if (prefs != null) {
@@ -71,6 +77,7 @@ public class BuildTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant and getting the build failed message logged to the
 	 * console with associated link. Bug 42333 and 44565
 	 */
+	@Test
 	public void testBuildFailedMessage() throws CoreException, BadLocationException {
 		launch("bad"); //$NON-NLS-1$
 		assertEquals("Incorrect number of messages logged for build. Should be 10. Was " //$NON-NLS-1$
@@ -79,14 +86,16 @@ public class BuildTests extends AbstractAntUIBuildTest {
 		assertTrue("Incorrect last message. Should start with BUILD FAILED. Message: " + message, //$NON-NLS-1$
 				message.startsWith("BUILD FAILED")); //$NON-NLS-1$
 		int offset = -1;
-		offset = ConsoleLineTracker.getDocument().getLineOffset(4) + 30; // link to buildfile that failed
-		IHyperlink link = getHyperlink(offset, ConsoleLineTracker.getDocument());
-		assertNotNull("No hyperlink found at offset " + offset, link); //$NON-NLS-1$
+		IDocument document = ConsoleLineTracker.getDocument();
+		offset = document.getLineOffset(4) + 30; // link to buildfile that failed
+		IHyperlink link = getHyperlink(offset, document);
+		assertNotNull("No hyperlink found at offset " + offset + "\n" + document, link); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	/**
 	 * Tests launching Ant and that the correct links are in the console doc
 	 */
+	@Test
 	public void testLinks() throws CoreException, BadLocationException {
 		launch("build"); //$NON-NLS-1$
 		int offset = 25; // buildfile link
@@ -104,17 +113,20 @@ public class BuildTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant and that build failed presents links to the failures when
 	 * multi-line.
 	 */
+	@Test
 	public void testBuildFailedLinks() throws CoreException, BadLocationException {
 		launch("102282"); //$NON-NLS-1$
-		int offset = ConsoleLineTracker.getDocument().getLineOffset(9) + 10; // second line of build failed link
-		IHyperlink link = getHyperlink(offset, ConsoleLineTracker.getDocument());
-		assertNotNull("No hyperlink found at offset " + offset, link); //$NON-NLS-1$
+		IDocument document = ConsoleLineTracker.getDocument();
+		int offset = document.getLineOffset(9) + 10; // second line of build failed link
+		IHyperlink link = getHyperlink(offset, document);
+		assertNotNull("No hyperlink found at offset " + offset + "\n" + document, link); //$NON-NLS-1$ //$NON-NLS-2$
 		activateLink(link);
 	}
 
 	/**
 	 * Tests launching Ant and that the correct colors are in the console doc
 	 */
+	@Test
 	public void testColor() throws BadLocationException, CoreException {
 		launch("echoing"); //$NON-NLS-1$
 		ConsoleLineTracker.waitForConsole();
@@ -132,6 +144,7 @@ public class BuildTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant in a separate vm and that the correct property
 	 * substitions occur
 	 */
+	@Test
 	public void testPropertySubstitution() throws CoreException {
 		ILaunchConfiguration config = getLaunchConfiguration("74840"); //$NON-NLS-1$
 		assertNotNull("Could not locate launch configuration for " + "74840", config); //$NON-NLS-1$ //$NON-NLS-2$
@@ -150,10 +163,9 @@ public class BuildTests extends AbstractAntUIBuildTest {
 
 	/**
 	 * Tests specifying the XmlLogger as a listener (bug 80435)
-	 *
-	 * @throws FileNotFoundException
 	 */
-	public void testXmlLoggerListener() throws CoreException, FileNotFoundException {
+	@Test
+	public void testXmlLoggerListener() throws CoreException, IOException {
 		launch("echoing", "-listener org.apache.tools.ant.XmlLogger"); //$NON-NLS-1$ //$NON-NLS-2$
 		assertEquals("Incorrect number of messages logged for build. Should be 8. Was " //$NON-NLS-1$
 				+ ConsoleLineTracker.getNumberOfMessages(), 8, ConsoleLineTracker.getNumberOfMessages());
@@ -163,7 +175,7 @@ public class BuildTests extends AbstractAntUIBuildTest {
 		// find the log file generated by the xml logger
 		getProject().getFolder("buildfiles").refreshLocal(IResource.DEPTH_INFINITE, null); //$NON-NLS-1$
 		File file = getBuildFile("log.xml"); //$NON-NLS-1$
-		String content = getFileContentAsString(file);
+		String content = Files.readString(file.toPath());
 		assertTrue("XML logging file is empty", content.length() > 0); //$NON-NLS-1$
 	}
 
@@ -171,6 +183,7 @@ public class BuildTests extends AbstractAntUIBuildTest {
 	 * Tests launching Ant and getting the build failed message logged to the
 	 * console. Bug 42333.
 	 */
+	// @Test
 	// public void testBuildFailedMessageDebug() throws CoreException {
 	// launchInDebug("bad");
 	// assertTrue("Incorrect number of messages logged for build. Should be 35. Was

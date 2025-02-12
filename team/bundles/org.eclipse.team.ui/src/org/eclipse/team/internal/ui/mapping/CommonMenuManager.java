@@ -24,7 +24,7 @@ import org.eclipse.jface.action.MenuManager;
  */
 public class CommonMenuManager extends MenuManager {
 
-	private Map<String, IHandler> handlers = new HashMap<>();
+	private final Map<String, IHandler> handlers = new HashMap<>();
 
 	public CommonMenuManager(String id) {
 		super(id);
@@ -32,7 +32,6 @@ public class CommonMenuManager extends MenuManager {
 
 	/**
 	 * Clear are the handlers registered with this manager.
-	 *
 	 */
 	public void clearHandlers() {
 		handlers.clear();

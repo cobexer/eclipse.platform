@@ -71,7 +71,7 @@ public class SynchronizationActionProvider extends CommonActionProvider {
 	 */
 	public static final String MARK_AS_MERGE_ACTION_ID = "org.eclipse.team.ui.markAsMergeAction"; //$NON-NLS-1$
 
-	private Map<String, IHandler> handlers = new HashMap<>();
+	private final Map<String, IHandler> handlers = new HashMap<>();
 	private OpenWithActionGroup openWithActions;
 
 	@Override
@@ -100,7 +100,6 @@ public class SynchronizationActionProvider extends CommonActionProvider {
 	 * still call this method, in which case they only need to handle providing
 	 * open for non-files. Otherwise, if they do not call this method, they must
 	 * provide all non-compare related open items.
-	 *
 	 */
 	protected void initializeOpenActions() {
 		ICommonViewerSite cvs = getActionSite().getViewSite();
@@ -192,8 +191,7 @@ public class SynchronizationActionProvider extends CommonActionProvider {
 	public void dispose() {
 		super.dispose();
 		if (openWithActions != null) openWithActions.dispose();
-		for (Object element : handlers.values()) {
-			IHandler handler = (IHandler) element;
+		for (IHandler handler : handlers.values()) {
 			if (handler instanceof MergeActionHandler) {
 				MergeActionHandler mah = (MergeActionHandler) handler;
 				mah.dispose();

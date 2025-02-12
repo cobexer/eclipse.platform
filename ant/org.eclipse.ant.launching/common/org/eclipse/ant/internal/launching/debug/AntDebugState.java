@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2005, 2015 IBM Corporation and others.
+ * Copyright (c) 2005, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -16,7 +16,6 @@ package org.eclipse.ant.internal.launching.debug;
 
 import java.util.HashMap;
 import java.util.Hashtable;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Stack;
 import java.util.Vector;
@@ -34,11 +33,9 @@ public class AntDebugState {
 	private static final String fgAntTaskName = "ant"; //$NON-NLS-1$
 	private static final String fgAntCallTaskName = "antcall"; //$NON-NLS-1$
 
-	private IDebugBuildLogger fLogger;
-	@SuppressWarnings("unused")
-	private Stack<Task> fTasks = new Stack<Task>();
-	@SuppressWarnings("unused")
-	private Map<Task, Object> fTaskToProxies = new HashMap<Task, Object>();
+	private final IDebugBuildLogger fLogger;
+	private final Stack<Task> fTasks = new Stack<>();
+	private final Map<Task, Object> fTaskToProxies = new HashMap<>();
 	private Task fCurrentTask;
 	private Task fStepOverTask;
 	private Task fStepIntoTask;
@@ -50,10 +47,8 @@ public class AntDebugState {
 
 	private Map<Project, Vector<?>> fProjectToTargetNames = null;
 	private Map<Project, Map<Target, Vector<Target>>> fProjectToMapOfTargetToBuildSequence = null;
-	@SuppressWarnings("unused")
-	private Stack<Target> fTargetsToExecute = new Stack<Target>();
-	@SuppressWarnings("unused")
-	private Stack<Target> fTargetsExecuting = new Stack<Target>();
+	private final Stack<Target> fTargetsToExecute = new Stack<>();
+	private final Stack<Target> fTargetsExecuting = new Stack<>();
 
 	private boolean fConsiderTargetBreakpoints = false;
 	private boolean fShouldSuspend;
@@ -65,10 +60,9 @@ public class AntDebugState {
 		fLogger = logger;
 	}
 
-	@SuppressWarnings("unused")
 	public void buildStarted() {
-		fProjectToTargetNames = new HashMap<Project, Vector<?>>();
-		fProjectToMapOfTargetToBuildSequence = new HashMap<Project, Map<Target, Vector<Target>>>();
+		fProjectToTargetNames = new HashMap<>();
+		fProjectToMapOfTargetToBuildSequence = new HashMap<>();
 	}
 
 	/**
@@ -231,7 +225,7 @@ public class AntDebugState {
 		if (considerTargetBreakpoints()) {
 			Target targetExecuting = getTargetExecuting();
 			if (targetExecuting != null) {
-				return getLocation(targetExecuting);
+				return targetExecuting.getLocation();
 			}
 		}
 		return null;
@@ -306,8 +300,7 @@ public class AntDebugState {
 			Object ref = eventProject.getReference(IAntCoreConstants.TARGET_VECTOR_NAME);
 			if (ref != null) {
 				fProjectToTargetNames.put(eventProject, (Vector<?>) ref);
-				@SuppressWarnings("unused")
-				HashMap<Target, Vector<Target>> targetToBuildSequence = new HashMap<Target, Vector<Target>>();
+				HashMap<Target, Vector<Target>> targetToBuildSequence = new HashMap<>();
 				setTargetToExecute(initializeBuildSequenceInformation(event, targetToBuildSequence));
 				fProjectToMapOfTargetToBuildSequence.put(eventProject, targetToBuildSequence);
 			}
@@ -327,77 +320,15 @@ public class AntDebugState {
 		setConsiderTargetBreakpoints(true);
 	}
 
-	public int getLineNumber(Location location) {
-		try { // succeeds with Ant newer than 1.6
-			return location.getLineNumber();
-		}
-		catch (NoSuchMethodError e) {
-			// Ant before 1.6
-			String locationString = location.toString();
-			if (locationString.length() == 0) {
-				return 0;
-			}
-			// filename: lineNumber: ("c:\buildfile.xml: 12: ")
-			int lastIndex = locationString.lastIndexOf(':');
-			int index = locationString.lastIndexOf(':', lastIndex - 1);
-			if (index != -1) {
-				try {
-					return Integer.parseInt(locationString.substring(index + 1, lastIndex));
-				}
-				catch (NumberFormatException nfe) {
-					return 0;
-				}
-			}
-			return 0;
-		}
-	}
-
-	public static Location getLocation(Target target) {
-		try {// succeeds with Ant newer than 1.6.2
-			return target.getLocation();
-		}
-		catch (NoSuchMethodError e) {
-			return Location.UNKNOWN_LOCATION;
-		}
-	}
-
-	public String getFileName(Location location) {
-		try {// succeeds with Ant newer than 1.6
-			return location.getFileName();
-		}
-		catch (NoSuchMethodError e) {
-			// Ant before 1.6
-			String locationString = location.toString();
-			if (locationString.length() == 0) {
-				return null;
-			}
-			// filename: lineNumber: ("c:\buildfile.xml: 12: ")
-			int lastIndex = locationString.lastIndexOf(':');
-			int index = locationString.lastIndexOf(':', lastIndex - 1);
-			if (index == -1) {
-				index = lastIndex; // only the filename is known
-			}
-			if (index != -1) {
-				// bug 84403
-				// if (locationString.startsWith("file:")) {
-				// return FileUtils.newFileUtils().fromURI(locationString);
-				// }
-				// remove file:
-				return locationString.substring(5, index);
-			}
-			return null;
-		}
-	}
-
 	private void appendToStack(StringBuffer stackRepresentation, String targetName, String taskName, Location location) {
 		stackRepresentation.append(targetName);
 		stackRepresentation.append(DebugMessageIds.MESSAGE_DELIMITER);
 		stackRepresentation.append(taskName);
 		stackRepresentation.append(DebugMessageIds.MESSAGE_DELIMITER);
 
-		stackRepresentation.append(getFileName(location));
+		stackRepresentation.append(location.getFileName());
 		stackRepresentation.append(DebugMessageIds.MESSAGE_DELIMITER);
-		stackRepresentation.append(getLineNumber(location));
+		stackRepresentation.append(location.getLineNumber());
 		stackRepresentation.append(DebugMessageIds.MESSAGE_DELIMITER);
 	}
 
@@ -419,7 +350,7 @@ public class AntDebugState {
 		}
 
 		if (!isAfterTaskEvent()) {
-			appendToStack(stackRepresentation, targetExecuting.getName(), IAntCoreConstants.EMPTY_STRING, getLocation(targetExecuting));
+			appendToStack(stackRepresentation, targetExecuting.getName(), IAntCoreConstants.EMPTY_STRING, targetExecuting.getLocation());
 		}
 		for (int i = tasks.size() - 1; i >= 0; i--) {
 			Task task = tasks.get(i);
@@ -429,9 +360,7 @@ public class AntDebugState {
 				// sub build target dependencies
 				String targetName = task.getOwningTarget().getName();
 				if (targetName != null && targetName.length() != 0) { // skip for implicit target
-					Iterator<Target> itr = fTargetsToExecute.iterator();
-					while (itr.hasNext()) {
-						Target target = itr.next();
+					for (Target target : fTargetsToExecute) {
 						if (target.getProject() != projectExecuting) {
 							targetToExecute = target;
 							continue;
@@ -459,7 +388,7 @@ public class AntDebugState {
 			for (int i = startIndex; i <= dependancyStackDepth; i++) {
 				stackTarget = buildSequence.get(i);
 				if (stackTarget.dependsOn(targetExecuting.getName())) {
-					appendToStack(stackRepresentation, stackTarget.getName(), IAntCoreConstants.EMPTY_STRING, getLocation(stackTarget));
+					appendToStack(stackRepresentation, stackTarget.getName(), IAntCoreConstants.EMPTY_STRING, stackTarget.getLocation());
 				}
 			}
 		}

@@ -13,7 +13,10 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
-import static org.junit.Assert.assertNotEquals;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.Assume.assumeFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.ByteArrayInputStream;
 import org.eclipse.core.filesystem.provider.FileInfo;
@@ -21,27 +24,29 @@ import org.eclipse.core.internal.filesystem.local.LocalFileNativesManager;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Platform;
-import org.eclipse.core.tests.resources.ResourceTest;
-
+import org.eclipse.core.runtime.Platform.OS;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Test for Bug 530868: millisecond resolution of file timestamps with native
  * provider.
  */
-public class Bug_530868 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_530868 {
 
 	private IProject testProject;
 	private IFile testFile;
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-
+	@BeforeEach
+	public void setUp(TestInfo testInfo) throws Exception {
 		testProject = getWorkspace().getRoot().getProject(Bug_530868.class + "TestProject");
-		testProject.create(getMonitor());
-		testProject.open(getMonitor());
-		testFile = testProject.getFile(getName());
+		testProject.create(createTestMonitor());
+		testProject.open(createTestMonitor());
+		testFile = testProject.getFile(testInfo.getTestMethod().get().getName());
 
 	}
 
@@ -49,13 +54,10 @@ public class Bug_530868 extends ResourceTest {
 	 * Create a file several times and check that we see different modification
 	 * timestamps.
 	 */
+	@Test
 	public void testMillisecondResolution() throws Exception {
+		assumeFalse("not relevant on Mac, as it does not have milliseconds resolution", OS.isMac());
 		try {
-			assertTrue("can only run if native provider can be enabled", LocalFileNativesManager.setUsingNative(true));
-			if (Platform.OS_MACOSX.equals(Platform.getOS())) {
-				// Mac still has no milliseconds resolution
-				return;
-			}
 			/*
 			 * Run 3 times in case we have seconds resolution due to a bug, but by chance we
 			 * happened to modify the file in-between two seconds.
@@ -67,8 +69,8 @@ public class Bug_530868 extends ResourceTest {
 			long timestamp3 = modifyTestFileAndFetchTimestamp("some contents 3");
 
 			String failMessage = "expected different timestamps for modifications in quick succession";
-			assertNotEquals(failMessage, timestamp1, timestamp2);
-			assertNotEquals(failMessage, timestamp2, timestamp3);
+			assertNotEquals(timestamp1, timestamp2, failMessage);
+			assertNotEquals(timestamp2, timestamp3, failMessage);
 		} finally {
 			LocalFileNativesManager.reset();
 		}
@@ -83,9 +85,9 @@ public class Bug_530868 extends ResourceTest {
 	private void setTestFileContents(String contents) throws Exception {
 		ByteArrayInputStream contentsStream = new ByteArrayInputStream(String.valueOf(contents).getBytes());
 		if (testFile.exists()) {
-			testFile.delete(true, getMonitor());
+			testFile.delete(true, createTestMonitor());
 		}
-		testFile.create(contentsStream, true, getMonitor());
+		testFile.create(contentsStream, true, createTestMonitor());
 	}
 
 	private long getLastModificationTimestamp() {
@@ -94,4 +96,5 @@ public class Bug_530868 extends ResourceTest {
 		FileInfo testFileInfo = LocalFileNativesManager.fetchFileInfo(filePath);
 		return testFileInfo.getLastModified();
 	}
+
 }

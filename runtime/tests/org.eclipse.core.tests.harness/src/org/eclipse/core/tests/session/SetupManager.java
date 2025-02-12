@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.StringTokenizer;
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.FactoryConfigurationError;
 import javax.xml.parsers.ParserConfigurationException;
 import org.eclipse.core.runtime.Platform;
@@ -57,8 +56,8 @@ public class SetupManager {
 	private static final String SETUP_OVERRIDE_SYSTEMPROPERTIES = "setup.override.systemProperties";
 	private static final String SETUP_OVERRIDE_VMARGS = "setup.override.vmArgs";
 	private String defaultOptionSetIds = "";
-	private Map<String, Setup> setupById;
-	private Collection<Setup> setups;
+	private final Map<String, Setup> setupById;
+	private final Collection<Setup> setups;
 
 	private static boolean contains(Object[] set, Object element) {
 		for (Object setElement : set) {
@@ -234,7 +233,9 @@ public class SetupManager {
 			throw new SetupException(
 					"No setup descriptions found. Run as Plug-in Test or ensure you are specifying the path for an existing setup file (e.g. -Dsetup.files=<setup-file-location1>[...,<setup-file-locationN>])");
 		}
-		DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+		@SuppressWarnings("restriction")
+		DocumentBuilder docBuilder = org.eclipse.core.internal.runtime.XmlProcessorFactory
+				.createDocumentBuilderWithErrorOnDOCTYPE();
 		for (int fileIndex = 0; fileIndex < found; fileIndex++) {
 			Document doc = docBuilder.parse(setupFiles[fileIndex]);
 			Element root = doc.getDocumentElement();

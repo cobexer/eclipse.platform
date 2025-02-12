@@ -64,7 +64,7 @@ public class InternalJobGroup {
 	/** synchronized by JobManager.lock **/
 	private int canceledJobsCount;
 	/** synchronized by JobManager.lock **/
-	private int seedJobsCount;
+	private final int seedJobsCount;
 	/** synchronized by JobManager.lock **/
 	private int seedJobsRemainingCount;
 
@@ -351,7 +351,6 @@ public class InternalJobGroup {
 
 	/**
 	 * Implementation of joining a job group.
-	 * @param remainingTime
 	 * @return <code>true</code> if the join completed, and false otherwise (still waiting).
 	 */
 	boolean doJoin(long remainingTime) throws InterruptedException {

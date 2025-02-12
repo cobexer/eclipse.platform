@@ -43,7 +43,7 @@ public class TeamContentProviderManager implements ITeamContentProviderManager {
 
 	Map<String, ITeamContentProviderDescriptor> descriptors;
 
-	private ListenerList<IPropertyChangeListener> listeners = new ListenerList<>(ListenerList.IDENTITY);
+	private final ListenerList<IPropertyChangeListener> listeners = new ListenerList<>(ListenerList.IDENTITY);
 
 	public static ITeamContentProviderManager getInstance() {
 		if (instance == null)
@@ -126,7 +126,7 @@ public class TeamContentProviderManager implements ITeamContentProviderManager {
 	@Override
 	public void setEnabledDescriptors(ITeamContentProviderDescriptor[] descriptors) {
 		List<ITeamContentProviderDescriptor> previouslyEnabled = new ArrayList<>();
-		for (Object element : this.descriptors.values()) {
+		for (ITeamContentProviderDescriptor element : this.descriptors.values()) {
 			TeamContentProviderDescriptor descriptor = (TeamContentProviderDescriptor) element;
 			if (descriptor.isEnabled()) {
 				previouslyEnabled.add(descriptor);

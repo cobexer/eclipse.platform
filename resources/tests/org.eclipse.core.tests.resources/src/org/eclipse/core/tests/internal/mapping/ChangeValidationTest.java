@@ -14,9 +14,16 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.mapping;
 
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.assertExistsInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.buildResources;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+
 import java.util.ArrayList;
 import java.util.List;
-
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
 import org.eclipse.core.resources.IProject;
@@ -24,14 +31,22 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.mapping.IResourceChangeDescriptionFactory;
 import org.eclipse.core.resources.mapping.ModelStatus;
 import org.eclipse.core.resources.mapping.ResourceChangeValidator;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
-import org.eclipse.core.runtime.Path;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.WorkspaceTestRule;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
 
 /**
  * Tests for change validation
  */
-public class ChangeValidationTest extends ResourceTest {
+public class ChangeValidationTest {
+
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
+
 	private IResourceChangeDescriptionFactory factory;
 	private IProject project;
 
@@ -91,23 +106,22 @@ public class ChangeValidationTest extends ResourceTest {
 		return null;
 	}
 
-	@Override
-	protected void setUp() throws Exception {
+	@Before
+	public void setUp() throws Exception {
 		TestModelProvider.enabled = true;
-		super.setUp();
 		project = getWorkspace().getRoot().getProject("Project");
 		IResource[] before = buildResources(project, new String[] {"c/", "c/b/", "c/a/", "c/x", "c/b/y", "c/b/z"});
-		ensureExistsInWorkspace(before, true);
+		createInWorkspace(before);
 		assertExistsInWorkspace(before);
 		factory = createEmptyChangeDescription();
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@After
+	public void tearDown() throws Exception {
 		TestModelProvider.enabled = false;
-		super.tearDown();
 	}
 
+	@Test
 	public void testCopyReplaceDeletedFolder() {
 		// Copy folder to replace a deleted folder
 		final IResource folder = project.findMember("c/b/");
@@ -118,6 +132,7 @@ public class ChangeValidationTest extends ResourceTest {
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.COPIED, folder),});
 	}
 
+	@Test
 	public void testFileChanges() {
 		factory.change((IFile) project.findMember("c/x"));
 		factory.change((IFile) project.findMember("c/b/y"));
@@ -125,13 +140,15 @@ public class ChangeValidationTest extends ResourceTest {
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.CHANGED, project.findMember("c/x")), ChangeDescription.getMessageFor(ChangeDescription.CHANGED, project.findMember("c/b/y"))});
 	}
 
+	@Test
 	public void testFileCopy() {
-		factory.copy(project.findMember("c/x"), new Path("c/x2"));
-		factory.copy(project.findMember("c/b/y"), new Path("c/y"));
+		factory.copy(project.findMember("c/x"), IPath.fromOSString("c/x2"));
+		factory.copy(project.findMember("c/b/y"), IPath.fromOSString("c/y"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.COPIED, project.findMember("c/x")), ChangeDescription.getMessageFor(ChangeDescription.COPIED, project.findMember("c/b/y"))});
 	}
 
+	@Test
 	public void testFileCreate() {
 		IFile file = project.getFile("file");
 		factory.create(file);
@@ -139,6 +156,7 @@ public class ChangeValidationTest extends ResourceTest {
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.ADDED, file)});
 	}
 
+	@Test
 	public void testFileInFolderCreate() {
 		IFolder folder = project.getFolder("folder");
 		IFile file = folder.getFile("file");
@@ -150,6 +168,7 @@ public class ChangeValidationTest extends ResourceTest {
 
 	}
 
+	@Test
 	public void testFileDeletion() {
 		factory.delete(project.findMember("c/x"));
 		factory.delete(project.findMember("c/b/y"));
@@ -160,20 +179,23 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return error status on contents deletion.", true);
 	}
 
+	@Test
 	public void testFileMoves() {
-		factory.move(project.findMember("c/x"), new Path("c/x2"));
-		factory.move(project.findMember("c/b/y"), new Path("c/y"));
+		factory.move(project.findMember("c/x"), IPath.fromOSString("c/x2"));
+		factory.move(project.findMember("c/b/y"), IPath.fromOSString("c/y"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.MOVED, project.findMember("c/x")), ChangeDescription.getMessageFor(ChangeDescription.MOVED, project.findMember("c/b/y"))});
 	}
 
+	@Test
 	public void testFolderCopy() {
 		final IResource folder = project.findMember("c/b/");
-		factory.copy(folder, new Path("c/d"));
+		factory.copy(folder, IPath.fromOSString("c/d"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.COPIED, folder),});
 	}
 
+	@Test
 	public void testFolderDeletion() {
 		final IResource folder = project.findMember("c/b/");
 		factory.delete(folder);
@@ -184,13 +206,15 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return error status on contents deletion.", true);
 	}
 
+	@Test
 	public void testFolderMove() {
 		final IResource folder = project.findMember("c/b/");
-		factory.move(folder, new Path("c/d"));
+		factory.move(folder, IPath.fromOSString("c/d"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.MOVED, folder),});
 	}
 
+	@Test
 	public void testMoveReplaceDeletedFolder() {
 		// Move to replace a deleted folder
 		final IResource folder = project.findMember("c/b/");
@@ -201,6 +225,7 @@ public class ChangeValidationTest extends ResourceTest {
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.MOVED, folder),});
 	}
 
+	@Test
 	public void testProjectClose() {
 		factory.close(project);
 		IStatus status = validateChange(factory);
@@ -210,13 +235,15 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return warning status on project close.", false);
 	}
 
+	@Test
 	public void testProjectCopy() {
 		// A project copy
-		factory.copy(project, new Path("MovedProject"));
+		factory.copy(project, IPath.fromOSString("MovedProject"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.COPIED, project)});
 	}
 
+	@Test
 	public void testProjectDeletion() {
 		// A project deletion
 		factory.delete(project);
@@ -227,6 +254,7 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return warning status on simple deletion.", false);
 	}
 
+	@Test
 	public void testProjectDeletionWithContents() {
 		factory.delete(project, true);
 		IStatus status = validateChange(factory);
@@ -235,6 +263,7 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return error status on contents deletion.", true);
 	}
 
+	@Test
 	public void testProjectDeletionWithoutContents() {
 		factory.delete(project, false);
 		IStatus status = validateChange(factory);
@@ -243,8 +272,9 @@ public class ChangeValidationTest extends ResourceTest {
 		assertContentDeletionFlag("Validation should return warning status on project removal from workspace.", false);
 	}
 
+	@Test
 	public void testProjectMove() {
-		factory.move(project, new Path("MovedProject"));
+		factory.move(project, IPath.fromOSString("MovedProject"));
 		IStatus status = validateChange(factory);
 		assertStatusEqual(status, new String[] {ChangeDescription.getMessageFor(ChangeDescription.MOVED, project)});
 	}
@@ -261,7 +291,7 @@ public class ChangeValidationTest extends ResourceTest {
 	}
 
 	private IStatus validateChange(IResourceChangeDescriptionFactory f) {
-		return ResourceChangeValidator.getValidator().validateChange(f.getDelta(), getMonitor());
+		return ResourceChangeValidator.getValidator().validateChange(f.getDelta(), createTestMonitor());
 	}
 
 }

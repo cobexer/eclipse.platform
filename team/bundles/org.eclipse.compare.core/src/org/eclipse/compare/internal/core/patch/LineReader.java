@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -16,11 +16,15 @@ package org.eclipse.compare.internal.core.patch;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 import org.eclipse.compare.internal.core.Messages;
 import org.eclipse.compare.patch.ReaderCreator;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ILog;
 
 public class LineReader {
 	/**
@@ -28,22 +32,14 @@ public class LineReader {
 	 */
 	public static List<String> load(ReaderCreator content, boolean create) {
 		List<String> lines = null;
-		BufferedReader bufferedReader = null;
 		if (!create && content != null && content.canCreateReader()) {
 			// read current contents
-			try {
-				bufferedReader = new BufferedReader(content.createReader());
+			try (BufferedReader bufferedReader = new BufferedReader(content.createReader())) {
 				lines = readLines(bufferedReader);
 			} catch (CoreException ex) {
-				Platform.getLog(LineReader.class).error(Messages.Activator_1, ex);
-			} finally {
-				if (bufferedReader != null) {
-					try {
-						bufferedReader.close();
-					} catch (IOException ex) {
-						// silently ignored
-					}
-				}
+				ILog.of(LineReader.class).error(Messages.Activator_1, ex);
+			} catch (IOException ex) {
+				ILog.get().warn(ex.getMessage(), ex);
 			}
 		}
 
@@ -70,7 +66,7 @@ public class LineReader {
 			while (iter.hasNext())
 				sb.append(iter.next());
 		} else {
-			String lineSeparator= System.getProperty("line.separator"); //$NON-NLS-1$
+			String lineSeparator = System.lineSeparator();
 			while (iter.hasNext()) {
 				String line= iter.next();
 				int l= length(line);
@@ -107,9 +103,9 @@ public class LineReader {
 	private boolean fHaveChar= false;
 	private int fLastChar;
 	private boolean fSawEOF= false;
-	private BufferedReader fReader;
+	private final BufferedReader fReader;
 	private boolean fIgnoreSingleCR= false;
-	private StringBuilder fBuffer= new StringBuilder();
+	private final StringBuilder fBuffer= new StringBuilder();
 
 	public LineReader(BufferedReader reader) {
 		this.fReader= reader;
@@ -172,7 +168,7 @@ public class LineReader {
 		try {
 			this.fReader.close();
 		} catch (IOException ex) {
-			// silently ignored
+			ILog.get().warn(ex.getMessage(), ex);
 		}
 	}
 
@@ -184,8 +180,7 @@ public class LineReader {
 				lines.add(line);
 			return lines;
 		} catch (IOException ex) {
-			// NeedWork
-			//System.out.println("error while reading file: " + fileName + "(" + ex + ")");
+			ILog.get().warn(ex.getMessage(), ex);
 		} finally {
 			close();
 		}

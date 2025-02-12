@@ -22,7 +22,6 @@ import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.StructuredSelection;
@@ -69,7 +68,7 @@ public class PatchTargetPage extends WizardPage {
 	 * @return org.eclipse.core.runtime.IPath
 	 */
 	protected IPath getPathFromText(Text textField) {
-		return (new Path(textField.getText())).makeAbsolute();
+		return (IPath.fromOSString(textField.getText())).makeAbsolute();
 	}
 
 	@Override
@@ -130,7 +129,7 @@ public class PatchTargetPage extends WizardPage {
 		// contains only a patch for a single file
 		if (!fPatcher.isWorkspacePatch() && fPatcher.getTarget() instanceof IFile && fPatcher.getDiffs().length > 1) {
 			InputPatchPage inputPage = (InputPatchPage) getWizard().getPage(InputPatchPage.INPUTPATCHPAGE_NAME);
-			String source = ""; //$NON-NLS-1$
+			String source;
 			switch (inputPage.getInputMethod()) {
 				case InputPatchPage.CLIPBOARD :
 					source = PatchMessages.InputPatchPage_Clipboard_title;
@@ -142,6 +141,9 @@ public class PatchTargetPage extends WizardPage {
 
 				case InputPatchPage.WORKSPACE :
 					source = PatchMessages.InputPatchPage_WorkspacePatch_title;
+					break;
+				default: // URL
+					source = ""; //$NON-NLS-1$
 					break;
 			}
 			String format = PatchMessages.InputPatchPage_SingleFileError_format;

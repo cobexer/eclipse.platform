@@ -16,7 +16,6 @@ package org.eclipse.ant.internal.ui.preferences;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +47,7 @@ import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.layout.TabFolderLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
@@ -69,8 +69,8 @@ import org.eclipse.ui.texteditor.ChainedPreferenceStore;
 public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	protected static class ControlData {
-		private String fKey;
-		private String[] fValues;
+		private final String fKey;
+		private final String[] fValues;
 
 		public ControlData(String key, String[] values) {
 			fKey = key;
@@ -104,24 +104,24 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	/**
 	 * Item in the highlighting color list.
-	 * 
+	 *
 	 * @since 3.0
 	 */
 	private static class HighlightingColorListItem {
 		/** Display name */
-		private String fDisplayName;
+		private final String fDisplayName;
 		/** Color preference key */
-		private String fColorKey;
+		private final String fColorKey;
 		/** Bold preference key */
-		private String fBoldKey;
+		private final String fBoldKey;
 		/** Italic preference key */
-		private String fItalicKey;
+		private final String fItalicKey;
 		/** Item color */
-		private Color fItemColor;
+		private final Color fItemColor;
 
 		/**
 		 * Initialize the item with the given values.
-		 * 
+		 *
 		 * @param displayName
 		 *            the display name
 		 * @param colorKey
@@ -179,7 +179,7 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	/**
 	 * Color list label provider.
-	 * 
+	 *
 	 * @since 3.0
 	 */
 	private static class ColorListLabelProvider extends LabelProvider implements IColorProvider {
@@ -202,7 +202,7 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	/**
 	 * Color list content provider.
-	 * 
+	 *
 	 * @since 3.0
 	 */
 	private static class ColorListContentProvider implements IStructuredContentProvider {
@@ -238,7 +238,6 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 	private final List<HighlightingColorListItem> fHighlightingColorList = new ArrayList<>(5);
 
 	private SourceViewer fPreviewViewer;
-	private AntPreviewerUpdater fPreviewerUpdater;
 
 	private SelectionListener fSelectionListener;
 	protected Map<String, String> fWorkingValues;
@@ -521,7 +520,7 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 		fPreviewViewer.getTextWidget().setFont(font);
 
 		IPreferenceStore store = new ChainedPreferenceStore(new IPreferenceStore[] { getOverlayStore(), EditorsUI.getPreferenceStore() });
-		fPreviewerUpdater = new AntPreviewerUpdater(fPreviewViewer, configuration, store);
+		new AntPreviewerUpdater(fPreviewViewer, configuration, store);
 
 		String content = loadPreviewContentFromFile("SyntaxPreviewCode.txt"); //$NON-NLS-1$
 		IDocument document = new Document(content);
@@ -541,21 +540,13 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	/**
 	 * Returns the current highlighting color list item.
-	 * 
+	 *
 	 * @return the current highlighting color list item
 	 * @since 3.0
 	 */
 	private HighlightingColorListItem getHighlightingColorListItem() {
 		IStructuredSelection selection = (IStructuredSelection) fHighlightingColorListViewer.getSelection();
 		return (HighlightingColorListItem) selection.getFirstElement();
-	}
-
-	@Override
-	public void dispose() {
-		super.dispose();
-		if (fPreviewerUpdater != null) {
-			fPreviewerUpdater.dispose();
-		}
 	}
 
 	private Composite createProblemsTabContent(TabFolder folder) {
@@ -689,8 +680,8 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	private void updateControlsForProblemReporting(boolean reportProblems) {
 		for (int i = fComboBoxes.size() - 1; i >= 0; i--) {
-			((Control) fComboBoxes.get(i)).setEnabled(reportProblems);
-			((Control) fProblemLabels.get(i)).setEnabled(reportProblems);
+			fComboBoxes.get(i).setEnabled(reportProblems);
+			fProblemLabels.get(i).setEnabled(reportProblems);
 		}
 		fSeverityLabel.setEnabled(reportProblems);
 		fBuildFilesToIgnoreProblems.setEnabled(reportProblems);
@@ -711,10 +702,8 @@ public class AntEditorPreferencePage extends AbstractAntEditorPreferencePage {
 
 	@Override
 	public boolean performOk() {
-		Iterator<String> iter = fWorkingValues.keySet().iterator();
 		IPreferenceStore store = getPreferenceStore();
-		while (iter.hasNext()) {
-			String key = iter.next();
+		for (String key : fWorkingValues.keySet()) {
 			store.putValue(key, fWorkingValues.get(key));
 		}
 		if (store.needsSaving()) {

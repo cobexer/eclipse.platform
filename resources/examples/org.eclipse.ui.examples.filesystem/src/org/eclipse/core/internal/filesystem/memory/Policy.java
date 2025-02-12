@@ -15,9 +15,6 @@ package org.eclipse.core.internal.filesystem.memory;
 
 import org.eclipse.core.runtime.*;
 
-/**
- * 
- */
 public class Policy {
 	public static final String PI_FILESYSTEM_EXAMPLE = "org.eclipse.ui.examples.filesystem"; //$NON-NLS-1$
 
@@ -30,7 +27,7 @@ public class Policy {
 	}
 
 	public static void log(IStatus status) {
-		Platform.getLog(Platform.getBundle(PI_FILESYSTEM_EXAMPLE)).log(status);
+		ILog.of(Platform.getBundle(PI_FILESYSTEM_EXAMPLE)).log(status);
 	}
 
 	public static IStatus createStatus(Throwable t) {

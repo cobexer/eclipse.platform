@@ -29,9 +29,9 @@ public class JSchLocation extends PlatformObject implements IJSchLocation{
 
   private String user;
   private String password;
-  private String host;
+  private final String host;
   private int port=DEFAULT_PORT;
-  private boolean userFixed=true;
+  private final boolean userFixed=true;
   private String comment=null;
   private IPasswordStore passwordStore=null;
 
@@ -104,6 +104,6 @@ public class JSchLocation extends PlatformObject implements IJSchLocation{
   @Override
   public String toString(){
     return user
-        +"@"+host+((port==DEFAULT_PORT) ? "" : ":"+(Integer.valueOf(port).toString())); //$NON-NLS-1$//$NON-NLS-2$ //$NON-NLS-3$
+        +"@"+host+((port==DEFAULT_PORT) ? "" : ":"+port); //$NON-NLS-1$//$NON-NLS-2$ //$NON-NLS-3$
   }
 }

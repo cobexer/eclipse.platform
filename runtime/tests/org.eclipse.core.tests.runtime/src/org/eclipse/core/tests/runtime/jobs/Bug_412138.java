@@ -13,33 +13,42 @@
  *******************************************************************************/
 package org.eclipse.core.tests.runtime.jobs;
 
-import java.io.*;
+import static org.eclipse.core.tests.runtime.RuntimeTestsPlugin.PI_RUNTIME_TESTS;
+import static org.junit.Assert.assertTrue;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.nio.file.Files;
 import java.util.concurrent.atomic.AtomicIntegerArray;
-import junit.framework.*;
-import org.eclipse.core.runtime.*;
+import junit.framework.AssertionFailedError;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.tests.harness.FileSystemHelper;
 import org.eclipse.core.tests.harness.TestBarrier2;
-import org.eclipse.core.tests.runtime.RuntimeTestsPlugin;
-import org.eclipse.core.tests.session.SessionTestSuite;
+import org.eclipse.core.tests.harness.session.SessionShouldError;
+import org.eclipse.core.tests.harness.session.SessionTestExtension;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Test for bug 412138.
  */
-public class Bug_412138 extends TestCase {
+@TestMethodOrder(MethodOrderer.MethodName.class)
+public class Bug_412138 {
+	@RegisterExtension
+	static SessionTestExtension sessionTestExtension = SessionTestExtension.forPlugin(PI_RUNTIME_TESTS).create();
+
 	private static final String FILE_NAME = FileSystemHelper.getTempDir().append(Bug_412138.class.getName()).toOSString();
 
-	public static Test suite() {
-		SessionTestSuite suite = new SessionTestSuite(RuntimeTestsPlugin.PI_RUNTIME_TESTS, Bug_412138.class.getName());
-		suite.addCrashTest(new Bug_412138("testRunScenario"));
-		suite.addTest(new Bug_412138("testVerifyResult"));
-		return suite;
-	}
-
-	public Bug_412138(String name) {
-		super(name);
-	}
-
+	@Test
+	@SessionShouldError
 	public void testRunScenario() throws InterruptedException {
 		// delete the file so that we don't report previous results
 		new File(FILE_NAME).delete();
@@ -59,7 +68,7 @@ public class Bug_412138 extends TestCase {
 						return Status.OK_STATUS;
 					}
 				} catch (InterruptedException e) {
-					return new Status(IStatus.ERROR, RuntimeTestsPlugin.PI_RUNTIME_TESTS, e.getMessage(), e);
+					return new Status(IStatus.ERROR, PI_RUNTIME_TESTS, e.getMessage(), e);
 				}
 			}
 		};
@@ -72,7 +81,7 @@ public class Bug_412138 extends TestCase {
 					status.set(0, TestBarrier2.STATUS_DONE);
 					return Status.OK_STATUS;
 				} catch (InterruptedException e) {
-					return new Status(IStatus.ERROR, RuntimeTestsPlugin.PI_RUNTIME_TESTS, e.getMessage(), e);
+					return new Status(IStatus.ERROR, PI_RUNTIME_TESTS, e.getMessage(), e);
 				}
 			}
 		};
@@ -104,18 +113,16 @@ public class Bug_412138 extends TestCase {
 		}
 	}
 
+	@Test
 	public void testVerifyResult() throws IOException, ClassNotFoundException {
 		File file = new File(FILE_NAME);
 		// if the file does not exist, there was no deadlock so the whole test pass
 		if (file.exists()) {
 			try {
 				AssertionFailedError e;
-				try (ObjectInputStream stream = new ObjectInputStream(new FileInputStream(FILE_NAME))) {
+				try (ObjectInputStream stream = new ObjectInputStream(Files.newInputStream(file.toPath()))) {
 					e = (AssertionFailedError) stream.readObject();
 				}
-				throw e;
-			} catch (IOException | ClassNotFoundException e) {
-				// re-throw since file existence already says the test failed
 				throw e;
 			} finally {
 				// helper file is no longer needed

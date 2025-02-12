@@ -13,33 +13,36 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.utils;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import java.net.URI;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.URIUtil;
 import org.eclipse.core.internal.utils.FileUtil;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
-import org.eclipse.core.tests.filesystem.FileSystemTest;
+import org.eclipse.core.tests.harness.FileSystemHelper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for {@link FileUtil} class.
  */
-public class FileUtilTest extends FileSystemTest {
+public class FileUtilTest {
 	private IPath baseTestDir;
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		baseTestDir = getRandomLocation();
+	@BeforeEach
+	public void setUp() throws Exception {
+		baseTestDir = FileSystemHelper.getRandomLocation();
 		baseTestDir.toFile().mkdirs();
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
-		ensureDoesNotExistInFileSystem(baseTestDir.toFile());
+	@AfterEach
+	public void tearDown() throws Exception {
+		FileSystemHelper.clear(baseTestDir.toFile());
 	}
 
+	@Test
 	public void testRealPath() throws Exception {
 		IPath realPath = baseTestDir.append("Test.TXT");
 		realPath.toFile().createNewFile();
@@ -47,11 +50,12 @@ public class FileUtilTest extends FileSystemTest {
 		if (EFS.getLocalFileSystem().isCaseSensitive()) {
 			testPath = realPath;
 		} else {
-			testPath = Path.fromOSString(realPath.toOSString().toLowerCase());
+			testPath = IPath.fromOSString(realPath.toOSString().toLowerCase());
 		}
 		assertEquals(realPath, FileUtil.realPath(testPath));
 	}
 
+	@Test
 	public void testRealPathOfNonexistingFile() throws Exception {
 		IPath realPath = baseTestDir.append("ExistingDir");
 		realPath.toFile().mkdirs();
@@ -59,12 +63,13 @@ public class FileUtilTest extends FileSystemTest {
 		if (EFS.getLocalFileSystem().isCaseSensitive()) {
 			testPath = realPath;
 		} else {
-			testPath = Path.fromOSString(realPath.toOSString().toLowerCase());
+			testPath = IPath.fromOSString(realPath.toOSString().toLowerCase());
 		}
 		String suffix = "NonexistingDir/NonexistingFile.txt";
 		assertEquals(realPath.append(suffix), FileUtil.realPath(testPath.append(suffix)));
 	}
 
+	@Test
 	public void testRealURI() throws Exception {
 		IPath realPath = baseTestDir.append("Test.TXT");
 		realPath.toFile().createNewFile();
@@ -72,7 +77,7 @@ public class FileUtilTest extends FileSystemTest {
 		if (EFS.getLocalFileSystem().isCaseSensitive()) {
 			testPath = realPath;
 		} else {
-			testPath = Path.fromOSString(realPath.toOSString().toLowerCase());
+			testPath = IPath.fromOSString(realPath.toOSString().toLowerCase());
 		}
 		URI realURI = URIUtil.toURI(realPath);
 		URI testURI = URIUtil.toURI(testPath);

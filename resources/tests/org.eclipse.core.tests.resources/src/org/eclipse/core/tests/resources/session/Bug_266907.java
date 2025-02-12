@@ -13,116 +13,98 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.session;
 
-import java.io.*;
-import junit.framework.Test;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.resources.WorkspaceSessionTest;
-import org.eclipse.core.tests.session.WorkspaceSessionTestSuite;
+import static java.util.function.Predicate.not;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.harness.FileSystemHelper.getTempDir;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInputStream;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.tests.harness.session.SessionTestExtension;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Tests for bug 266907
  */
-public class Bug_266907 extends WorkspaceSessionTest {
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+public class Bug_266907 {
 
 	private static final String PROJECT_NAME = "Project";
 	private static final String FILE_NAME = "File";
 	private static final String MARKER_ATTRIBUTE_NAME = "AttributeName";
 	private static final String MARKER_ATTRIBUTE = "Attribute";
 
-	public static Test suite() {
-		return new WorkspaceSessionTestSuite(PI_RESOURCES_TESTS, Bug_266907.class);
-	}
+	@RegisterExtension
+	static SessionTestExtension sessionTestExtension = SessionTestExtension.forPlugin(PI_RESOURCES_TESTS)
+			.withCustomization(SessionTestExtension.createCustomWorkspace()).create();
 
-	public void test1stSession() {
+	@Test
+	@Order(1)
+	public void test1CreateProjectAndDeleteProjectFile() throws Exception {
+		// Ensure that no asynchronous save job restores the .project file after
+		// deleting it by suspending the JobManager for this workspace session
+		Job.getJobManager().suspend();
+
 		final IWorkspace workspace = getWorkspace();
 		IProject project = workspace.getRoot().getProject(PROJECT_NAME);
-		try {
-			project.create(getMonitor());
-			project.open(getMonitor());
-		} catch (CoreException e1) {
-			fail("1.0", e1);
-		}
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 
 		IFile f = project.getFile(FILE_NAME);
-		try {
-			f.create(getContents("content"), true, getMonitor());
-		} catch (CoreException e1) {
-			fail("2.0", e1);
-		}
+		f.create(createInputStream("content"), true, createTestMonitor());
 
-		try {
-			IMarker marker = f.createMarker(IMarker.BOOKMARK);
-			marker.setAttribute(MARKER_ATTRIBUTE_NAME, MARKER_ATTRIBUTE);
-		} catch (CoreException e2) {
-			fail("3.0", e2);
-		}
+		IMarker marker = f.createMarker(IMarker.BOOKMARK);
+		marker.setAttribute(MARKER_ATTRIBUTE_NAME, MARKER_ATTRIBUTE);
 
 		// remember the location of .project to delete is at the end
-		File dotProject = project.getFile(".project").getLocation().toFile();
+		Path dotProject = project.getFile(".project").getLocation().toPath();
 
-		try {
-			workspace.save(true, getMonitor());
-		} catch (CoreException e) {
-			fail("4.0", e);
-		}
+		workspace.save(true, createTestMonitor());
 
 		// move .project to a temp location
-		File dotProjectCopy = getTempDir().append("dotProjectCopy").toFile();
-		try {
-			dotProjectCopy.createNewFile();
-			transferStreams(new FileInputStream(dotProject), new FileOutputStream(dotProjectCopy), null);
-			dotProject.delete();
-		} catch (FileNotFoundException e) {
-			fail("5.0", e);
-		} catch (IOException e) {
-			fail("5.1", e);
-		}
+		Path dotProjectCopy = getTempDir().append("dotProjectCopy").toPath();
+		Files.copy(dotProject, dotProjectCopy);
+		Files.delete(dotProject);
 	}
 
-	public void test2ndSession() {
+	@Test
+	@Order(2)
+	public void test2RestoreWorkspaceFile() throws Exception {
 		final IWorkspace workspace = getWorkspace();
 		IProject project = workspace.getRoot().getProject(PROJECT_NAME);
 
 		// the project should be closed cause .project is removed
-		assertTrue("1.0", !project.isAccessible());
+		assertThat(project).matches(not(IProject::isAccessible), "is not accessible");
 
 		// recreate .project
-		File dotProject = project.getFile(".project").getLocation().toFile();
-		File dotProjectCopy = getTempDir().append("dotProjectCopy").toFile();
-		try {
-			dotProject.createNewFile();
-			transferStreams(new FileInputStream(dotProjectCopy), new FileOutputStream(dotProject), null);
-			dotProjectCopy.delete();
-		} catch (IOException e1) {
-			fail("2.0", e1);
-		}
+		Path dotProject = project.getFile(".project").getLocation().toPath();
+		Path dotProjectCopy = getTempDir().append("dotProjectCopy").toPath();
 
-		try {
-			project.open(getMonitor());
-		} catch (CoreException e) {
-			fail("3.0", e);
-		}
+		Files.copy(dotProjectCopy, dotProject);
+		Files.delete(dotProjectCopy);
 
-		assertTrue("4.0", project.isAccessible());
+		project.open(createTestMonitor());
+		assertThat(project).matches(IProject::isAccessible, "is accessible");
 
 		IFile file = project.getFile(FILE_NAME);
-		IMarker[] markers = null;
-		try {
-			markers = file.findMarkers(IMarker.BOOKMARK, false, IResource.DEPTH_ZERO);
-		} catch (CoreException e) {
-			fail("5.0", e);
-		}
+		IMarker[] markers = file.findMarkers(IMarker.BOOKMARK, false, IResource.DEPTH_ZERO);
+		assertThat(markers).as("number of markers").hasSize(1);
 
-		assertNotNull("6.0", markers);
-		assertEquals("6.1", markers.length, 1);
-
-		Object attribute = null;
-		try {
-			attribute = markers[0].getAttribute(MARKER_ATTRIBUTE_NAME);
-		} catch (CoreException e) {
-			fail("7.0", e);
-		}
-		assertEquals("8.0", attribute, MARKER_ATTRIBUTE);
+		Object attribute = markers[0].getAttribute(MARKER_ATTRIBUTE_NAME);
+		assertThat(attribute).as("name of marker").isEqualTo(MARKER_ATTRIBUTE);
 	}
+
 }

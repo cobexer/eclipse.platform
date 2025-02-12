@@ -13,9 +13,15 @@
  *******************************************************************************/
 package org.eclipse.core.internal.jobs;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import org.eclipse.core.internal.runtime.RuntimeLog;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.Job;
 
@@ -23,15 +29,9 @@ import org.eclipse.core.runtime.jobs.Job;
  * Implicit jobs are jobs that are running by virtue of a JobManager.begin/end
  * pair. They act like normal jobs, except they are tied to an arbitrary thread
  * of the client's choosing, and they can be nested.
- * @ThreadSafe
  */
 class ImplicitJobs {
 
-	/**
-	 * Cached unused instance that can be reused
-	 * @GuardedBy("this")
-	 */
-	private ThreadJob jobCache = null;
 	protected JobManager manager;
 
 	/**
@@ -72,9 +72,9 @@ class ImplicitJobs {
 			//create a thread job for this thread, use the rule from the real job if it has one
 			Job realJob = manager.currentJob();
 			if (realJob != null && realJob.getRule() != null)
-				threadJob = newThreadJob(realJob.getRule());
+				threadJob = new ThreadJob(realJob.getRule());
 			else {
-				threadJob = newThreadJob(rule);
+				threadJob = new ThreadJob(rule);
 				threadJob.acquireRule = true;
 			}
 			//don't acquire rule if it is a suspended rule
@@ -167,7 +167,6 @@ class ImplicitJobs {
 		//if the job was started, we need to notify job manager to end it
 		if (threadJob.isRunning())
 			manager.endJob(threadJob, Status.OK_STATUS, false, worker);
-		recycle(threadJob);
 	}
 
 	/**
@@ -184,25 +183,6 @@ class ImplicitJobs {
 	}
 
 	/**
-	 * Returns a new or reused ThreadJob instance.
-	 * @GuardedBy("this")
-	 */
-	private ThreadJob newThreadJob(ISchedulingRule rule) {
-		if (jobCache != null) {
-			ThreadJob job = jobCache;
-			// calling setRule will try to acquire JobManager.lock, breaking
-			// lock acquisition protocol. Since we managing this special job
-			// ourselves we can call internalSetRule
-			((InternalJob) job).internalSetRule(rule);
-			job.acquireRule = job.isRunning = false;
-			job.realJob = null;
-			jobCache = null;
-			return job;
-		}
-		return new ThreadJob(rule);
-	}
-
-	/**
 	 * A job has just finished that was holding a scheduling rule, and the
 	 * scheduling rule is now free.  Wake any blocked thread jobs so they can
 	 * compete for the newly freed lock
@@ -214,17 +194,7 @@ class ImplicitJobs {
 	}
 
 	/**
-	 * Indicates that a thread job is no longer in use and can be reused.
-	 * @GuardedBy("this")
-	 */
-	private void recycle(ThreadJob job) {
-		if (jobCache == null && job.recycle())
-			jobCache = job;
-	}
-
-	/**
 	 * Implements IJobManager#resume(ISchedulingRule)
-	 * @param rule
 	 */
 	void resume(ISchedulingRule rule) {
 		//resume happens as a consequence of freeing the last rule in the stack
@@ -235,8 +205,6 @@ class ImplicitJobs {
 
 	/**
 	 * Implements IJobManager#suspend(ISchedulingRule, IProgressMonitor)
-	 * @param rule
-	 * @param monitor
 	 */
 	void suspend(ISchedulingRule rule, IProgressMonitor monitor) {
 		if (JobManager.DEBUG_BEGIN_END)

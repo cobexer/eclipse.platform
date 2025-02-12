@@ -33,10 +33,10 @@ import org.eclipse.core.runtime.IPath;
  */
 public class CompoundResourceTraversal {
 
-	private Set<IResource> deepFolders = new HashSet<>();
-	private Set<IResource> shallowFolders = new HashSet<>();
-	private Set<IResource> zeroFolders = new HashSet<>();
-	private Set<IResource> files = new HashSet<>();
+	private final Set<IResource> deepFolders = new HashSet<>();
+	private final Set<IResource> shallowFolders = new HashSet<>();
+	private final Set<IResource> zeroFolders = new HashSet<>();
+	private final Set<IResource> files = new HashSet<>();
 
 	public void addTraversals(ResourceTraversal[] traversals) {
 		for (ResourceTraversal traversal : traversals) {
@@ -79,8 +79,7 @@ public class CompoundResourceTraversal {
 	public boolean isCovered(IResource resource, int depth) {
 		IPath fullPath = resource.getFullPath();
 		// Regardless of the depth, look for a deep folder that covers the resource
-		for (Object element : deepFolders) {
-			IResource deepFolder = (IResource) element;
+		for (IResource deepFolder : deepFolders) {
 			if (deepFolder.getFullPath().isPrefixOf(fullPath)) {
 				return true;
 			}

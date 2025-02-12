@@ -13,19 +13,25 @@
  *******************************************************************************/
 package org.eclipse.core.tests.filesystem;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import java.net.URI;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.URIUtil;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.tests.internal.filesystem.wrapper.WrapperFileSystem;
+import org.junit.Test;
 
 /**
  * Tests API methods of the class {@link org.eclipse.core.filesystem.URIUtil}.
  */
-public class URIUtilTest extends FileSystemTest {
+public class URIUtilTest {
 	/**
 	 * Tests API method {@link org.eclipse.core.filesystem.URIUtil#equals(java.net.URI, java.net.URI)}.
 	 */
+	@Test
 	public void testEquals() {
 		if (EFS.getLocalFileSystem().isCaseSensitive()) {
 			//test that case variants are not equal
@@ -44,6 +50,7 @@ public class URIUtilTest extends FileSystemTest {
 	/**
 	 * Tests API method {@link org.eclipse.core.filesystem.URIUtil#toURI(org.eclipse.core.runtime.IPath)}.
 	 */
+	@Test
 	public void testPathToURI() {
 		if (Platform.getOS().equals(Platform.OS_WIN32)) {
 			//path with spaces
@@ -57,36 +64,40 @@ public class URIUtilTest extends FileSystemTest {
 	/**
 	 * Tests API method {@link org.eclipse.core.filesystem.URIUtil#toURI(String)}.
 	 */
+	@Test
 	public void testStringToURI() {
 		if (Platform.getOS().equals(Platform.OS_WIN32)) {
-			assertEquals("1.0", "/c:/temp/with spaces", URIUtil.toURI(new Path("c:\\temp\\with spaces")).getSchemeSpecificPart());
+			assertEquals("1.0", "/c:/temp/with spaces", URIUtil.toURI(IPath.fromOSString("c:\\temp\\with spaces")).getSchemeSpecificPart());
 		} else {
-			assertEquals("1.0", "/tmp/with spaces", URIUtil.toURI(new Path("/tmp/with spaces")).getSchemeSpecificPart());
+			assertEquals("1.0", "/tmp/with spaces", URIUtil.toURI(IPath.fromOSString("/tmp/with spaces")).getSchemeSpecificPart());
 		}
 	}
 
 	/**
 	 * Tests API method {@link org.eclipse.core.filesystem.URIUtil#toPath(java.net.URI)}.
 	 */
+	@Test
 	public void testToPath() throws Exception {
 		// Relative path
 		String pathString = "test/path with/spaces to_file.txt";
-		assertEquals("1.0", new Path(pathString), URIUtil.toPath(URIUtil.toURI(pathString, false)));
+		assertEquals("1.0", IPath.fromOSString(pathString), URIUtil.toPath(URIUtil.toURI(pathString, false)));
 		// Absolute path
 		if (Platform.getOS().equals(Platform.OS_WIN32)) {
 			pathString = "c:/test/path with/spaces to_file.txt";
 		} else {
 			pathString = "/test/path with/spaces to_file.txt";
 		}
-		assertEquals("2.0", new Path(pathString), URIUtil.toPath(URIUtil.toURI(pathString)));
+		assertEquals("2.0", IPath.fromOSString(pathString), URIUtil.toPath(URIUtil.toURI(pathString)));
 		// User defined file system
-		assertEquals("3.0", new Path(pathString), URIUtil.toPath(WrapperFileSystem.getWrappedURI(URIUtil.toURI(pathString))));
+		assertEquals("3.0", IPath.fromOSString(pathString),
+				URIUtil.toPath(WrapperFileSystem.getWrappedURI(URIUtil.toURI(pathString))));
 	}
 
 	/**
 	 * Test API methods {@link org.eclipse.core.filesystem.URIUtil#toURI(IPath)},
 	 * {@link org.eclipse.core.filesystem.URIUtil#toURI(String)} results equality
 	 */
+	@Test
 	public void testToURIAbsolute() {
 		String pathString = null;
 		if (Platform.getOS().equals(Platform.OS_WIN32)) {
@@ -94,7 +105,7 @@ public class URIUtilTest extends FileSystemTest {
 		} else {
 			pathString = "/test/path with/spaces to_file.txt";
 		}
-		IPath path = new Path(pathString);
+		IPath path = IPath.fromOSString(pathString);
 		URI uri01 = URIUtil.toURI(path);
 		URI uri02 = URIUtil.toURI(pathString);
 		assertEquals("1.0", uri01, uri02);
@@ -104,9 +115,10 @@ public class URIUtilTest extends FileSystemTest {
 	 * Test API methods {@link org.eclipse.core.filesystem.URIUtil#toURI(IPath)},
 	 * {@link org.eclipse.core.filesystem.URIUtil#toURI(String)} results equality
 	 */
+	@Test
 	public void testToURIRelative() {
 		String pathString = "test/path with/spaces to_file.txt";
-		IPath path = new Path(pathString);
+		IPath path = IPath.fromOSString(pathString);
 		URI uri01 = URIUtil.toURI(path);
 		URI uri02 = URIUtil.toURI(pathString, false);
 		assertEquals("1.0", uri01, uri02);
@@ -118,16 +130,17 @@ public class URIUtilTest extends FileSystemTest {
 	 * Test API methods {@link org.eclipse.core.filesystem.URIUtil#toURI(org.eclipse.core.runtime.IPath)}.
 	 * {@link org.eclipse.core.filesystem.URIUtil#toPath(URI)} transformation with relative and absolute paths
 	 */
+	@Test
 	public void testFromPathToURI() {
 		//absolute path
 		IPath aPath = null;
 		if (Platform.getOS().equals(Platform.OS_WIN32)) {
-			aPath = new Path("c:/test/path with spaces/to_file.txt");
+			aPath = IPath.fromOSString("c:/test/path with spaces/to_file.txt");
 		} else {
-			aPath = new Path("/test/path with spaces/to_file.txt");
+			aPath = IPath.fromOSString("/test/path with spaces/to_file.txt");
 		}
 		//relative path
-		IPath rPath = new Path("relative/with spaces/path/to_file.txt");
+		IPath rPath = IPath.fromOSString("relative/with spaces/path/to_file.txt");
 
 		URI aUri = URIUtil.toURI(aPath);
 		URI rUri = URIUtil.toURI(rPath);
@@ -136,6 +149,7 @@ public class URIUtilTest extends FileSystemTest {
 		assertEquals("2.0", rPath.toString(), URIUtil.toPath(rUri).toString());
 	}
 
+	@Test
 	public void testBug291323_doubleDotLocationPath() {
 		URI aUri = URIUtil.toURI("..");
 		URI bUri = URIUtil.toURI("");

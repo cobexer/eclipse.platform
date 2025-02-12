@@ -13,6 +13,12 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.ui.externaltools;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,6 +32,8 @@ import org.eclipse.core.resources.IncrementalProjectBuilder;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.ILaunchConfigurationType;
 import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * Tests for {@link BuilderCoreUtils}
@@ -35,12 +43,9 @@ import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 @SuppressWarnings("restriction")
 public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 
-	public BuilderCoreUtilsTests() {
-		super("BuilderCoreUtils Tests"); //$NON-NLS-1$
-	}
-
+	@Before
 	@Override
-	protected void setUp() throws Exception {
+	public void setUp() throws Exception {
 		super.setUp();
 		// create the external tool builder dir
 		BuilderCoreUtils.getBuilderFolder(getProject(), true);
@@ -50,9 +55,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests the {@link BuilderCoreUtils#configFromBuildCommandArgs(org.eclipse.core.resources.IProject, java.util.Map, String[])} method. <br>
 	 * <br>
 	 * Tests the argument map missing the {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute and all other config arguments
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs1() throws Exception {
 		ILaunchConfiguration config = BuilderCoreUtils.configFromBuildCommandArgs(getProject(), new HashMap<>(), new String[] {
 				BuilderCoreUtils.VERSION_1_0 });
@@ -63,9 +67,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests the {@link BuilderCoreUtils#configFromBuildCommandArgs(org.eclipse.core.resources.IProject, java.util.Map, String[])} method. <br>
 	 * <br>
 	 * Tests the argument map missing the {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute only
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs2() throws Exception {
 		Map<String, String> args = get20AntArgumentMap();
 		ILaunchConfiguration config = BuilderCoreUtils.configFromBuildCommandArgs(getProject(), args, new String[] { BuilderCoreUtils.VERSION_2_1 });
@@ -76,9 +79,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests the {@link BuilderCoreUtils#configFromBuildCommandArgs(org.eclipse.core.resources.IProject, java.util.Map, String[])} method. <br>
 	 * <br>
 	 * Tests the argument map with an invalid {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs3() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(BuilderCoreUtils.LAUNCH_CONFIG_HANDLE, "foo"); //$NON-NLS-1$
@@ -91,9 +93,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * Tests the argument map with a valid {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute with no project prefix, but does include the
 	 * .externalToolBuilders dir name - causes a lookup in the launch manager which fails because of the extra path prefix
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs4() throws Exception {
 		createExternalToolBuilder(getProject(), "testConfigFromBuildCommandArgs4", null); //$NON-NLS-1$
 		Map<String, String> args = new HashMap<>();
@@ -107,9 +108,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * Tests the argument map with a valid {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute with no project prefix - causes a lookup in the
 	 * launch manager returns the config
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs5() throws Exception {
 		createExternalToolBuilder(getProject(), "testConfigFromBuildCommandArgs5", null); //$NON-NLS-1$
 		Map<String, String> args = new HashMap<>();
@@ -123,9 +123,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * Tests the argument map with a valid {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute with the project prefix but not including the
 	 * .externalToolBuilder path segment
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs6() throws Exception {
 		createExternalToolBuilder(getProject(), "testConfigFromBuildCommandArgs6", null); //$NON-NLS-1$
 		Map<String, String> args = new HashMap<>();
@@ -138,9 +137,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests the {@link BuilderCoreUtils#configFromBuildCommandArgs(org.eclipse.core.resources.IProject, java.util.Map, String[])} method. <br>
 	 * <br>
 	 * Tests the argument map with a valid {@link BuilderCoreUtils#LAUNCH_CONFIG_HANDLE} attribute with the project prefix and a valid config path
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigFromBuildCommandArgs7() throws Exception {
 		createExternalToolBuilder(getProject(), "testConfigFromBuildCommandArgs7", null); //$NON-NLS-1$
 		Map<String, String> args = new HashMap<>();
@@ -154,9 +152,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for a full build of the default target after a clean
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers1() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AFTER_CLEAN_TARGETS, null);
@@ -176,9 +173,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for a full build of a specific targets 'def' and 'clean'
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers2() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AFTER_CLEAN_TARGETS, "def,clean"); //$NON-NLS-1$
@@ -200,9 +196,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests that the triggers are configured for an incremental AND full build with default targets <br>
 	 * <br>
 	 * https://bugs.eclipse.org/bugs/show_bug.cgi?id=114563
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers3() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_MANUAL_TARGETS, null);
@@ -225,9 +220,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * Tests that the triggers are configured for an incremental AND full build with the targets 'def' and 'inc' <br>
 	 * <br>
 	 * https://bugs.eclipse.org/bugs/show_bug.cgi?id=114563
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers4() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_MANUAL_TARGETS, "def,inc"); //$NON-NLS-1$
@@ -248,9 +242,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for an auto build
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers5() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AUTO_TARGETS, null);
@@ -270,9 +263,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for an auto build with the targets 'def' and 'auto'
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers6() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AUTO_TARGETS, "def,auto"); //$NON-NLS-1$
@@ -292,9 +284,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for a clean build
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers7() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_CLEAN_TARGETS, null);
@@ -314,9 +305,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * <br>
 	 * Tests that the triggers are configured for a clean build with the targets 'def' and 'clean'
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers8() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_CLEAN_TARGETS, "def,clean"); //$NON-NLS-1$
@@ -337,9 +327,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * Tests that the triggers are configured for a full + incremental build with the targets 'def' and 'inc' specified for after clean targets and
 	 * manual targets respectively
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers9() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AFTER_CLEAN_TARGETS, "def"); //$NON-NLS-1$
@@ -363,9 +352,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * <br>
 	 * Tests that the triggers are configured for a full + incremental build with the targets 'def' and 'inc' specified for after clean targets and
 	 * manual targets respectively
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testConfigureTriggers10() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		args.put(IAntLaunchConstants.ATTR_ANT_AFTER_CLEAN_TARGETS, "def"); //$NON-NLS-1$
@@ -392,9 +380,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 
 	/**
 	 * Tests the {@link BuilderCoreUtils#isUnmigratedConfig(org.eclipse.debug.core.ILaunchConfiguration)} method
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testIsUnmigratedConfig1() throws Exception {
 		ILaunchConfigurationType type = AbstractAntUITest.getLaunchManager().getLaunchConfigurationType(IAntLaunchConstants.ID_ANT_BUILDER_LAUNCH_CONFIGURATION_TYPE);
 		if (type != null) {
@@ -407,9 +394,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 
 	/**
 	 * Tests the {@link BuilderCoreUtils#isUnmigratedConfig(org.eclipse.debug.core.ILaunchConfiguration)} method
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testIsUnmigratedConfig2() throws Exception {
 		ILaunchConfiguration config = createExternalToolBuilder(getProject(), "testIsUnmigratedConfig2", null); //$NON-NLS-1$
 		assertFalse("Shoudl not be considered 'unmigrated'", BuilderCoreUtils.isUnmigratedConfig(config)); //$NON-NLS-1$
@@ -421,9 +407,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * method <br>
 	 * <br>
 	 * Tests the case of a new un-saved {@link ILaunchConfiguration}
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testToBuildCommand1() throws Exception {
 		ILaunchConfigurationWorkingCopy copy = createExternalToolBuilderWorkingCopy(getProject(), "testToBuildCommand1", null); //$NON-NLS-1$
 		ICommand command = BuilderCoreUtils.toBuildCommand(getProject(), copy, getProject().getDescription().newCommand());
@@ -436,9 +421,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * method <br>
 	 * <br>
 	 * Tests the case of an existing configuration
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testToBuildCommand2() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		ILaunchConfiguration copy = createExternalToolBuilder(getProject(), "testToBuildCommand2", args); //$NON-NLS-1$
@@ -452,9 +436,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 	 * method <br>
 	 * <br>
 	 * Tests the case of the working copy of an existing configuration
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testToBuildCommand3() throws Exception {
 		Map<String, String> args = new HashMap<>();
 		ILaunchConfiguration copy = createExternalToolBuilder(getProject(), "testToBuildCommand3", args); //$NON-NLS-1$
@@ -464,9 +447,8 @@ public class BuilderCoreUtilsTests extends AbstractExternalToolTest {
 
 	/**
 	 * Tests the {@link BuilderCoreUtils#buildTypesToArray(String)} method
-	 * 
-	 * @throws Exception
 	 */
+	@Test
 	public void testBuildTypesToArray1() throws Exception {
 		String kinds = IExternalToolConstants.BUILD_TYPE_CLEAN + "," + //$NON-NLS-1$
 				IExternalToolConstants.BUILD_TYPE_INCREMENTAL + "," + //$NON-NLS-1$

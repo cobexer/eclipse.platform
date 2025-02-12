@@ -13,27 +13,61 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources;
 
-import java.io.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_127562;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_EARTH;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_MISSING;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_SIMPLE;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_SNOW;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.NATURE_WATER;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.getInvalidNatureSets;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.getValidNatureSets;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createUniqueString;
+import static org.junit.Assert.assertThrows;
+
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.internal.resources.CheckMissingNaturesListener;
 import org.eclipse.core.internal.resources.File;
 import org.eclipse.core.internal.resources.PreferenceInitializer;
-import org.eclipse.core.internal.utils.FileUtil;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.IJobManager;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.core.tests.internal.resources.SimpleNature;
-import org.junit.Assert;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.function.ThrowingRunnable;
 
 /**
  * Tests all aspects of project natures.  These tests only
  * exercise API classes and methods.  Note that the nature-related
  * APIs on IWorkspace are tested by IWorkspaceTest.
  */
-public class NatureTest extends ResourceTest {
+public class NatureTest {
+
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
+
 	IProject project;
 
 	/**
@@ -41,8 +75,8 @@ public class NatureTest extends ResourceTest {
 	 * does not match the "shouldFail" argument, an assertion error
 	 * with the given message is thrown.
 	 */
-	protected void setNatures(String message, IProject project, String[] natures, boolean shouldFail) {
-		setNatures(message, project, natures, shouldFail, false);
+	private void setNatures(IProject project, String[] natures, boolean shouldFail) throws Throwable {
+		setNatures(project, natures, shouldFail, false);
 	}
 
 	/**
@@ -50,167 +84,145 @@ public class NatureTest extends ResourceTest {
 	 * does not match the "shouldFail" argument, an assertion error
 	 * with the given message is thrown.
 	 */
-	protected void setNatures(String message, IProject project, String[] natures, boolean shouldFail, boolean silent) {
-		try {
-			IProjectDescription desc = project.getDescription();
-			desc.setNatureIds(natures);
-			int flags = IResource.KEEP_HISTORY;
-			if (silent) {
-				flags |= IResource.AVOID_NATURE_CONFIG;
-			}
-			project.setDescription(desc, flags, getMonitor());
-			if (shouldFail) {
-				fail(message);
-			}
-		} catch (CoreException e) {
-			if (!shouldFail) {
-				fail(message, e);
-			}
+	private void setNatures(IProject project, String[] natures, boolean shouldFail, boolean silent)
+			throws Throwable {
+		IProjectDescription desc = project.getDescription();
+		desc.setNatureIds(natures);
+		int flags;
+		if (silent) {
+			flags = IResource.KEEP_HISTORY | IResource.AVOID_NATURE_CONFIG;
+		} else {
+			flags = IResource.KEEP_HISTORY;
+		}
+		ThrowingRunnable descriptionSetter = () -> project.setDescription(desc, flags, createTestMonitor());
+		if (shouldFail) {
+			assertThrows(CoreException.class, descriptionSetter);
+		} else {
+			descriptionSetter.run();
 		}
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@After
+	public void tearDown() throws Exception {
 		project.delete(true, null);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, PreferenceInitializer.PREF_MISSING_NATURE_MARKER_SEVERITY_DEFAULT);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
-		getWorkspace().getRoot().refreshLocal(IResource.DEPTH_INFINITE, null);
-		super.tearDown();
 	}
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		this.project = ResourcesPlugin.getWorkspace().getRoot().getProject(getUniqueString());
+	@Before
+	public void setUp() throws Exception {
+		this.project = ResourcesPlugin.getWorkspace().getRoot().getProject(createUniqueString());
+	}
+
+	private void assertHasEnabledNature(String nature) throws CoreException {
+		assertThat(project.hasNature(nature))
+				.withFailMessage("project '%s' is expected to have nature: %s", project, nature).isTrue();
+		assertThat(project.isNatureEnabled(nature))
+				.withFailMessage("project '%s' is expected to have nature enabled: %s", project, nature).isTrue();
+	}
+
+	private void assertDoesNotHaveNature(String nature) throws CoreException {
+		assertThat(project.hasNature(nature))
+				.withFailMessage("project '%s' is not expected to have nature: %s", project, nature).isFalse();
+		assertThat(project.isNatureEnabled(nature))
+				.withFailMessage("project '%s' is not expected to have nature enabled: %s", project, nature).isFalse();
 	}
 
 	/**
 	 * Tests invalid additions to the set of natures for a project.
 	 */
-	public void testInvalidAdditions() {
-		ensureExistsInWorkspace(project, true);
-		setNatures("1.0", project, new String[] {NATURE_SIMPLE}, false);
+	@Test
+	public void testInvalidAdditions() throws Throwable {
+		createInWorkspace(project);
+		setNatures(project, new String[] { NATURE_SIMPLE }, false);
 
 		//Adding a nature that is not available.
-		setNatures("2.0", project, new String[] {NATURE_SIMPLE, NATURE_MISSING}, true);
-		try {
-			assertTrue("2.1", project.hasNature(NATURE_SIMPLE));
-			assertTrue("2.2", !project.hasNature(NATURE_MISSING));
-			assertTrue("2.3", project.isNatureEnabled(NATURE_SIMPLE));
-			assertTrue("2.4", !project.isNatureEnabled(NATURE_MISSING));
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
+		setNatures(project, new String[] { NATURE_SIMPLE, NATURE_MISSING }, true);
+		assertHasEnabledNature(NATURE_SIMPLE);
+		assertDoesNotHaveNature(NATURE_MISSING);
+
 		//Adding a nature that has a missing prerequisite.
-		setNatures("3.0", project, new String[] {NATURE_SIMPLE, NATURE_SNOW}, true);
-		try {
-			assertTrue("3.1", project.hasNature(NATURE_SIMPLE));
-			assertTrue("3.2", !project.hasNature(NATURE_SNOW));
-			assertTrue("3.3", project.isNatureEnabled(NATURE_SIMPLE));
-			assertTrue("3.4", !project.isNatureEnabled(NATURE_SNOW));
-		} catch (CoreException e) {
-			fail("3.99", e);
-		}
+		setNatures(project, new String[] { NATURE_SIMPLE, NATURE_SNOW }, true);
+		assertHasEnabledNature(NATURE_SIMPLE);
+		assertDoesNotHaveNature(NATURE_SNOW);
+
 		//Adding a nature that creates a duplicated set member.
-		setNatures("4.0", project, new String[] {NATURE_EARTH}, false);
-		setNatures("4.1", project, new String[] {NATURE_EARTH, NATURE_WATER}, true);
-		try {
-			assertTrue("3.1", project.hasNature(NATURE_EARTH));
-			assertTrue("3.2", !project.hasNature(NATURE_WATER));
-			assertTrue("3.3", project.isNatureEnabled(NATURE_EARTH));
-			assertTrue("3.4", !project.isNatureEnabled(NATURE_WATER));
-		} catch (CoreException e) {
-			fail("3.99", e);
-		}
+		setNatures(project, new String[] { NATURE_EARTH }, false);
+		setNatures(project, new String[] { NATURE_EARTH, NATURE_WATER }, true);
+		assertHasEnabledNature(NATURE_EARTH);
+		assertDoesNotHaveNature(NATURE_WATER);
 	}
 
 	/**
 	 * Tests invalid removals from the set of natures for a project.
 	 */
-	public void testInvalidRemovals() {
-		ensureExistsInWorkspace(project, true);
+	@Test
+	public void testInvalidRemovals() throws Throwable {
+		createInWorkspace(project);
 
 		//Removing a nature that still has dependents.
-		setNatures("1.0", project, new String[] {NATURE_WATER, NATURE_SNOW}, false);
-		setNatures("2.0", project, new String[] {NATURE_SNOW}, true);
-		try {
-			assertTrue("2.1", project.hasNature(NATURE_WATER));
-			assertTrue("2.2", project.hasNature(NATURE_SNOW));
-			assertTrue("2.3", project.isNatureEnabled(NATURE_WATER));
-			assertTrue("2.4", project.isNatureEnabled(NATURE_SNOW));
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
+		setNatures(project, new String[] { NATURE_WATER, NATURE_SNOW }, false);
+		setNatures(project, new String[] { NATURE_SNOW }, true);
+		assertHasEnabledNature(NATURE_WATER);
+		assertHasEnabledNature(NATURE_SNOW);
 	}
 
-	public void testNatureLifecyle() {
-		ensureExistsInWorkspace(project, true);
+	@Test
+	public void testNatureLifecyle() throws Throwable {
+		createInWorkspace(project);
 
 		//add simple nature
-		setNatures("1.0", project, new String[] {NATURE_SIMPLE}, false);
+		setNatures(project, new String[] { NATURE_SIMPLE }, false);
 		SimpleNature instance = SimpleNature.getInstance();
-		assertTrue("1.1", instance.wasConfigured);
-		assertTrue("1.2", !instance.wasDeconfigured);
+		assertThat(instance.wasConfigured).withFailMessage("Simple nature has not been configured").isTrue();
+		assertThat(instance.wasDeconfigured).withFailMessage("Simple nature has been deconfigured").isFalse();
 		instance.reset();
 
 		//remove simple nature
-		setNatures("1.3", project, new String[0], false);
+		setNatures(project, new String[0], false);
 		instance = SimpleNature.getInstance();
-		assertTrue("1.4", !instance.wasConfigured);
-		assertTrue("1.5", instance.wasDeconfigured);
+		assertThat(instance.wasConfigured).withFailMessage("Simple nature has been configured").isFalse();
+		assertThat(instance.wasDeconfigured).withFailMessage("Simple nature has not been deconfigured").isTrue();
 
 		//add with AVOID_NATURE_CONFIG
 		instance.reset();
-		setNatures("2.0", project, new String[] {NATURE_SIMPLE}, false, true);
+		setNatures(project, new String[] { NATURE_SIMPLE }, false, true);
 		instance = SimpleNature.getInstance();
-		assertTrue("2.1", !instance.wasConfigured);
-		assertTrue("2.2", !instance.wasDeconfigured);
-		try {
-			assertTrue("2.3", project.hasNature(NATURE_SIMPLE));
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+		assertThat(instance.wasConfigured).withFailMessage("Simple nature has been configured").isFalse();
+		assertThat(instance.wasDeconfigured).withFailMessage("Simple nature has been deconfigured").isFalse();
+		assertHasEnabledNature(NATURE_SIMPLE);
 
 		//remove with AVOID_NATURE_CONFIG
 		instance.reset();
-		setNatures("2.3", project, new String[0], false, true);
+		setNatures(project, new String[0], false, true);
 		instance = SimpleNature.getInstance();
-		assertTrue("2.4", !instance.wasConfigured);
-		assertTrue("2.5", !instance.wasDeconfigured);
-		try {
-			assertTrue("2.6", !project.hasNature(NATURE_SIMPLE));
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
+		assertThat(instance.wasConfigured).withFailMessage("Simple nature has been configured").isFalse();
+		assertThat(instance.wasDeconfigured).withFailMessage("Simple nature has been deconfigured").isFalse();
+		assertDoesNotHaveNature(NATURE_SIMPLE);
 	}
 
 	/**
 	 * Test simple addition and removal of natures.
 	 */
-	public void testSimpleNature() {
-		ensureExistsInWorkspace(project, true);
+	@Test
+	public void testSimpleNature() throws Throwable {
+		createInWorkspace(project);
 
 		String[][] valid = getValidNatureSets();
-		for (int i = 0; i < valid.length; i++) {
-			setNatures("valid: " + i, project, valid[i], false);
+		for (String[] element : valid) {
+			setNatures(project, element, false);
 		}
 		//configure a valid nature before starting invalid tests
 		String[] currentSet = new String[] {NATURE_SIMPLE};
-		setNatures("1.0", project, currentSet, false);
+		setNatures(project, currentSet, false);
 
 		//now do invalid tests and ensure simple nature is still configured
 		String[][] invalid = getInvalidNatureSets();
-		for (int i = 0; i < invalid.length; i++) {
-			setNatures("invalid: " + i, project, invalid[i], true);
-			try {
-				assertTrue("2.0", project.hasNature(NATURE_SIMPLE));
-				assertTrue("2.1", !project.hasNature(NATURE_EARTH));
-				assertTrue("2.2", project.isNatureEnabled(NATURE_SIMPLE));
-				assertTrue("2.3", !project.isNatureEnabled(NATURE_EARTH));
-				assertEquals("2.4", project.getDescription().getNatureIds(), currentSet);
-			} catch (CoreException e) {
-				fail("2.99", e);
-			}
+		for (String[] element : invalid) {
+			setNatures(project, element, true);
+			assertHasEnabledNature(NATURE_SIMPLE);
+			assertDoesNotHaveNature(NATURE_WATER);
+			assertThat(currentSet).isEqualTo(project.getDescription().getNatureIds());
 		}
 	}
 
@@ -218,29 +230,25 @@ public class NatureTest extends ResourceTest {
 	 * Test addition of nature that requires the workspace root.
 	 * See bugs 127562 and  128709.
 	 */
-	public void testBug127562Nature() {
-		ensureExistsInWorkspace(project, true);
+	@Test
+	public void testBug127562Nature() throws Throwable {
+		createInWorkspace(project);
 		IWorkspace ws = project.getWorkspace();
 
 		String[][] valid = getValidNatureSets();
-		for (int i = 0; i < valid.length; i++) {
-			setNatures("valid: " + i, project, valid[i], false);
+		for (String[] element : valid) {
+			setNatures(project, element, false);
 		}
 
 		// add with AVOID_NATURE_CONFIG
 		String[] currentSet = new String[] {NATURE_127562};
-		setNatures("1.0", project, currentSet, false, true);
+		setNatures(project, currentSet, false, true);
 
 		// configure the nature using a conflicting scheduling rule
 		IJobManager manager = Job.getJobManager();
 		try {
 			manager.beginRule(ws.getRuleFactory().modifyRule(project), null);
-			project.getNature(NATURE_127562).configure();
-			fail("2.0");
-		} catch (CoreException ex) {
-			fail("2.1");
-		} catch (IllegalArgumentException ex) {
-			// should throw this kind of exception
+			assertThrows(IllegalArgumentException.class, () -> project.getNature(NATURE_127562).configure());
 		} finally {
 			manager.endRule(ws.getRuleFactory().modifyRule(project));
 		}
@@ -249,89 +257,36 @@ public class NatureTest extends ResourceTest {
 		try {
 			manager.beginRule(ws.getRoot(), null);
 			project.getNature(NATURE_127562).configure();
-		} catch (CoreException ex) {
-			fail("3.0");
 		} finally {
 			manager.endRule(ws.getRoot());
 		}
 	}
 
-	public void testBug297871() {
-		ensureExistsInWorkspace(project, true);
+	@Test
+	public void testBug297871() throws Throwable {
+		createInWorkspace(project);
 
-		java.io.File desc = null;
-		try {
-			IFileStore descStore = ((File) project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME)).getStore();
-			desc = descStore.toLocalFile(EFS.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.0");
-		}
+		IFileStore descStore = ((File) project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME)).getStore();
+		java.io.File desc = descStore.toLocalFile(EFS.NONE, createTestMonitor());
 
 		java.io.File descTmp = new java.io.File(desc.getPath() + ".tmp");
-		try {
-			copy(desc, descTmp);
-		} catch (IOException e) {
-			fail("2.0", e);
-		}
+		Files.copy(desc.toPath(), descTmp.toPath());
 
-		setNatures("valid ", project, new String[] {NATURE_EARTH}, false);
+		setNatures(project, new String[] { NATURE_EARTH }, false);
 
-		try {
-			assertNotNull(project.getNature(NATURE_EARTH));
-		} catch (CoreException e) {
-			fail("3.0", e);
-		}
+		assertHasEnabledNature(NATURE_EARTH);
+		assertThat(project.getNature(NATURE_EARTH)).isNotNull();
 
-		try {
-			assertTrue(project.hasNature(NATURE_EARTH));
-		} catch (CoreException e) {
-			fail("4.0", e);
-		}
+		Files.copy(descTmp.toPath(), desc.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		// Make sure enough time has past to bump file's
+		// timestamp during the copy
+		org.eclipse.core.tests.resources.ResourceTestUtil
+				.touchInFilesystem(project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME));
 
-		try {
-			// Make sure enough time has past to bump file's
-			// timestamp during the copy
-			Thread.sleep(1000);
-		} catch (InterruptedException e) {
-			fail("5.0", e);
-		}
-
-		try {
-			copy(descTmp, desc);
-		} catch (IOException e) {
-			fail("6.0", e);
-		}
-
-		try {
-			project.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		} catch (CoreException e) {
-			fail("7.0", e);
-		}
-
-		try {
-			assertNull(project.getNature(NATURE_EARTH));
-		} catch (CoreException e) {
-			fail("8.0", e);
-		}
-
-		try {
-			assertFalse(project.hasNature(NATURE_EARTH));
-		} catch (CoreException e) {
-			fail("9.0", e);
-		}
-	}
-
-	private void copy(java.io.File src, java.io.File dst) throws IOException {
-		try (
-			InputStream in = new FileInputStream(src);
-			OutputStream out = new FileOutputStream(dst);
-		) {
-			byte[] buffer = new byte[1024];
-			int read;
-			while ((read = in.read(buffer)) > 0) {
-				out.write(buffer, 0, read);
-			}
-		}
+		// should read file from filesystem, creating new IProjectDescription:
+		project.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
+		assertDoesNotHaveNature(NATURE_EARTH);
+		assertThat(project.getNature(NATURE_EARTH)).isNull();
 	}
 
 	/**
@@ -340,34 +295,33 @@ public class NatureTest extends ResourceTest {
 	 *
 	 * See Bug 338055.
 	 */
+	@Test
 	public void testBug338055() throws Exception {
-		final boolean finished[] = new boolean[] {false};
-		ensureExistsInWorkspace(project, true);
+		final boolean finished[] = new boolean[1];
+		createInWorkspace(project);
 
-		new Job("CheckNatureJob") {
+		AtomicReference<CoreException> failureInJob = new AtomicReference<>();
+		Job simulateNatureAccessJob = new Job("CheckNatureJob") {
 			@Override
 			protected IStatus run(IProgressMonitor monitor) {
 				try {
-					if (finished[0] == false) {
+					if (!finished[0]) {
 						if (project.exists() && project.isOpen()) {
 							project.isNatureEnabled(NATURE_SIMPLE);
 						}
 						schedule();
 					}
 				} catch (CoreException e) {
-					fail("CheckNatureJob failed", e);
+					failureInJob.set(e);
 				}
 				return Status.OK_STATUS;
 			}
-		}.schedule();
+		};
+		simulateNatureAccessJob.schedule();
 
-		try {
-			// Make sure enough time has past to bump file's
-			// timestamp during the copy
-			Thread.sleep(1000);
-		} catch (InterruptedException e) {
-			fail("2.0", e);
-		}
+		// Make sure enough time has past to bump file's
+		// timestamp during the copy
+		Thread.sleep(1000);
 
 		IFileStore descStore = ((File) project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME)).getStore();
 
@@ -381,110 +335,107 @@ public class NatureTest extends ResourceTest {
 		description.append("</natures></projectDescription>\n");
 
 		// write the description
-		try (OutputStream output = descStore.openOutputStream(EFS.NONE, getMonitor());) {
+		try (OutputStream output = descStore.openOutputStream(EFS.NONE, createTestMonitor());) {
 			output.write(description.toString().getBytes());
-		} catch (CoreException e) {
-			fail("1.0");
 		}
 
-		try {
-			project.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		} catch (CoreException e) {
-			fail("3.0", e);
-		}
+		project.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
 
 		finished[0] = true;
-
-		assertTrue("4.0", project.hasNature(NATURE_SIMPLE));
-		assertTrue("5.0", project.isNatureEnabled(NATURE_SIMPLE));
+		simulateNatureAccessJob.join();
+		assertHasEnabledNature(NATURE_SIMPLE);
 	}
 
+	@Test
 	public void testMissingNatureAddsMarker() throws Exception {
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, IMarker.SEVERITY_WARNING);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		IProjectDescription desc = project.getDescription();
 		desc.setNatureIds(new String[] {NATURE_MISSING});
-		project.setDescription(desc, IResource.FORCE | IResource.AVOID_NATURE_CONFIG, getMonitor());
-		project.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.setDescription(desc, IResource.FORCE | IResource.AVOID_NATURE_CONFIG, createTestMonitor());
+		project.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
 		IMarker[] markers = project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE);
-		Assert.assertEquals(1, markers.length);
+		assertThat(markers).hasSize(1);
 		IMarker marker = markers[0];
-		Assert.assertEquals(NATURE_MISSING, marker.getAttribute("natureId"));
-		Assert.assertNotEquals(-42, marker.getAttribute(IMarker.CHAR_START, -42));
-		Assert.assertNotEquals(-42, marker.getAttribute(IMarker.CHAR_END, -42));
-		try (ByteArrayOutputStream bos = new ByteArrayOutputStream(); InputStream input = ((IFile) marker.getResource()).getContents()) {
-			FileUtil.transferStreams(input, bos, "whatever", getMonitor());
-			String marked = bos.toString().substring(marker.getAttribute(IMarker.CHAR_START, -42), marker.getAttribute(IMarker.CHAR_END, -42));
-			Assert.assertEquals(NATURE_MISSING, marked);
-		}
+		assertThat(marker.getAttribute("natureId")).isEqualTo(NATURE_MISSING);
+		assertThat(marker.getAttribute(IMarker.CHAR_START, -42)).isNotEqualTo(-42);
+		assertThat(marker.getAttribute(IMarker.CHAR_END, -42)).isNotEqualTo(-42);
+		String content = ((IFile) marker.getResource()).readString();
+		String marked = content.substring(marker.getAttribute(IMarker.CHAR_START, -42), marker.getAttribute(IMarker.CHAR_END, -42));
+		assertThat(marked).isEqualTo(NATURE_MISSING);
 	}
 
+	@Test
 	public void testMissingNatureWithWhitespacesSetChars() throws Exception {
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, IMarker.SEVERITY_WARNING);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		IFile dotProjectFile = project.getFile(IProjectDescription.DESCRIPTION_FILE_NAME);
-		dotProjectFile.setContents(new ByteArrayInputStream(("<projectDescription><name>" + project.getName() + "</name><natures><nature> " + NATURE_MISSING + "  </nature></natures></projectDescription>").getBytes()), false, false, getMonitor());
-		project.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		dotProjectFile
+				.setContents(
+						("<projectDescription><name>" + project.getName() + "</name><natures><nature> " + NATURE_MISSING
+								+ "  </nature></natures></projectDescription>").getBytes(),
+						false, false, createTestMonitor());
+		project.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
 		IMarker[] markers = project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE);
-		Assert.assertEquals(1, markers.length);
+		assertThat(markers).hasSize(1);
 		IMarker marker = markers[0];
-		Assert.assertEquals(NATURE_MISSING, marker.getAttribute("natureId"));
-		Assert.assertNotEquals(-42, marker.getAttribute(IMarker.CHAR_START, -42));
-		Assert.assertNotEquals(-42, marker.getAttribute(IMarker.CHAR_END, -42));
-		try (ByteArrayOutputStream bos = new ByteArrayOutputStream(); InputStream input = ((IFile) marker.getResource()).getContents()) {
-			FileUtil.transferStreams(input, bos, "whatever", getMonitor());
-			String marked = bos.toString().substring(marker.getAttribute(IMarker.CHAR_START, -42),
-					marker.getAttribute(IMarker.CHAR_END, -42));
-			Assert.assertEquals(NATURE_MISSING, marked);
-		}
+		assertThat(marker.getAttribute("natureId")).isEqualTo(NATURE_MISSING);
+		assertThat(marker.getAttribute(IMarker.CHAR_START, -42)).isNotEqualTo(-42);
+		assertThat(marker.getAttribute(IMarker.CHAR_END, -42)).isNotEqualTo(-42);
+		String content = ((IFile) marker.getResource()).readString();
+		String marked = content.substring(marker.getAttribute(IMarker.CHAR_START, -42), marker.getAttribute(IMarker.CHAR_END, -42));
+		assertThat(marked).isEqualTo(NATURE_MISSING);
 	}
 
+	@Test
 	public void testKnownNatureDoesntAddMarker() throws Exception {
-		ensureExistsInWorkspace(project, true);
+		createInWorkspace(project);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, IMarker.SEVERITY_WARNING);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		IProjectDescription desc = project.getDescription();
 		desc.setNatureIds(new String[] {NATURE_SIMPLE});
-		project.setDescription(desc, getMonitor());
-		project.refreshLocal(IResource.DEPTH_INFINITE, getMonitor());
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.setDescription(desc, createTestMonitor());
+		project.refreshLocal(IResource.DEPTH_INFINITE, createTestMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
-		Assert.assertEquals(0, project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE).length);
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
+		assertThat(project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE)).isEmpty();
 	}
 
+	@Test
 	public void testListenToPreferenceChange() throws Exception {
 		testMissingNatureAddsMarker();
 		// to INFO
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, IMarker.SEVERITY_INFO);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
 		IMarker[] markers = project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE);
-		Assert.assertEquals(1, markers.length);
-		Assert.assertEquals(IMarker.SEVERITY_INFO, markers[0].getAttribute(IMarker.SEVERITY, -42));
+		assertThat(markers).hasSize(1).satisfiesExactly(
+				marker -> assertThat(marker.getAttribute(IMarker.SEVERITY, -42)).isEqualTo(IMarker.SEVERITY_INFO));
 		// to IGNORE
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, -1);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
 		markers = project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE);
-		Assert.assertEquals(0, markers.length);
+		assertThat(markers).isEmpty();
 		// to ERROR
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).putInt(ResourcesPlugin.PREF_MISSING_NATURE_MARKER_SEVERITY, IMarker.SEVERITY_ERROR);
 		InstanceScope.INSTANCE.getNode(ResourcesPlugin.PI_RESOURCES).flush();
 		Job.getJobManager().wakeUp(CheckMissingNaturesListener.MARKER_TYPE);
-		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, getMonitor());
+		Job.getJobManager().join(CheckMissingNaturesListener.MARKER_TYPE, createTestMonitor());
 		markers = project.findMarkers(CheckMissingNaturesListener.MARKER_TYPE, false, IResource.DEPTH_ONE);
-		Assert.assertEquals(1, markers.length);
-		Assert.assertEquals(IMarker.SEVERITY_ERROR, markers[0].getAttribute(IMarker.SEVERITY, -42));
+		assertThat(markers).hasSize(1).satisfiesExactly(
+				marker -> assertThat(marker.getAttribute(IMarker.SEVERITY, -42)).isEqualTo(IMarker.SEVERITY_ERROR));
 	}
+
 }

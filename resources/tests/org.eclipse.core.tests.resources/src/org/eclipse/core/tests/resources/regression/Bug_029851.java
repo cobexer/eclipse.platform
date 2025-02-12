@@ -13,20 +13,29 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.buildResources;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createUniqueString;
+
 import java.util.ArrayList;
 import java.util.Collection;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IResourceVisitor;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
- * Tests regression of bug 25457.  In this case, attempting to move a project
+ * Tests regression of bug 25457. In this case, attempting to move a project
  * that is only a case change, where the move fails due to another handle being
  * open on a file in the hierarchy, would cause deletion of the source.
  */
-public class Bug_029851 extends ResourceTest {
-
-	private final boolean DISABLED = true;
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_029851 {
 
 	private Collection<String> createChildren(int breadth, int depth, IPath prefix) {
 		ArrayList<String> result = new ArrayList<>();
@@ -40,32 +49,26 @@ public class Bug_029851 extends ResourceTest {
 		return result;
 	}
 
-	@Override
-	public String[] defineHierarchy() {
+	private void createResourceHierarchy() throws CoreException {
 		int depth = 3;
 		int breadth = 3;
-		IPath prefix = new Path("/a/");
+		IPath prefix = IPath.fromOSString("/a/");
 		Collection<String> result = createChildren(breadth, depth, prefix);
 		result.add(prefix.toString());
-		return result.toArray(new String[0]);
+		IResource[] resources = buildResources(getWorkspace().getRoot(), result.toArray(new String[0]));
+		createInWorkspace(resources);
 	}
 
-	public void test() {
-		// disable for now.
-		if (DISABLED) {
-			return;
-		}
-		createHierarchy();
-		final QualifiedName key = new QualifiedName("local", getUniqueString());
-		final String value = getUniqueString();
+	@Test
+	public void test() throws CoreException {
+		createResourceHierarchy();
+		final QualifiedName key = new QualifiedName("local", createUniqueString());
+		final String value = createUniqueString();
 		IResourceVisitor visitor = resource -> {
 			resource.setPersistentProperty(key, value);
 			return true;
 		};
-		try {
-			getWorkspace().getRoot().accept(visitor);
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		getWorkspace().getRoot().accept(visitor);
 	}
+
 }

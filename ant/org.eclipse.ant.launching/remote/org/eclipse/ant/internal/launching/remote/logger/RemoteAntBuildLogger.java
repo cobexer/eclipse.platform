@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2003, 2016 IBM Corporation and others.
+ * Copyright (c) 2003, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -30,7 +30,6 @@ import org.apache.tools.ant.Location;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.Target;
 import org.apache.tools.ant.util.StringUtils;
-import org.eclipse.ant.internal.launching.debug.AntDebugState;
 import org.eclipse.ant.internal.launching.remote.AntSecurityException;
 import org.eclipse.ant.internal.launching.remote.IAntCoreConstants;
 import org.eclipse.ant.internal.launching.remote.InternalAntRunner;
@@ -43,7 +42,7 @@ import org.eclipse.ant.internal.launching.remote.RemoteAntMessages;
 public class RemoteAntBuildLogger extends DefaultLogger {
 
 	/** Time of the start of the build */
-	private long fStartTime = System.currentTimeMillis();
+	private final long fStartTime = System.currentTimeMillis();
 
 	/**
 	 * The client socket.
@@ -236,7 +235,6 @@ public class RemoteAntBuildLogger extends DefaultLogger {
 		}
 	}
 
-	@SuppressWarnings("unused")
 	@Override
 	public void messageLogged(BuildEvent event) {
 		if (event.getPriority() > msgOutputLevel && event.getPriority() != InternalAntRunner.MSG_PROJECT_HELP) {
@@ -253,7 +251,7 @@ public class RemoteAntBuildLogger extends DefaultLogger {
 				return;
 			}
 			if (fEventQueue == null) {
-				fEventQueue = new ArrayList<BuildEvent>(10);
+				fEventQueue = new ArrayList<>(10);
 			}
 			fEventQueue.add(event);
 			return;
@@ -359,7 +357,7 @@ public class RemoteAntBuildLogger extends DefaultLogger {
 
 	private void marshalTargetMessage(BuildEvent event) {
 		Target target = event.getTarget();
-		Location location = AntDebugState.getLocation(target);
+		Location location = target.getLocation();
 
 		StringBuilder message = new StringBuilder();
 		message.append(MessageIds.TARGET);

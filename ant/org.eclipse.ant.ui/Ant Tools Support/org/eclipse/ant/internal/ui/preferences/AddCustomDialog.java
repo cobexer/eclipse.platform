@@ -31,7 +31,6 @@ import org.eclipse.ant.internal.core.IAntCoreConstants;
 import org.eclipse.ant.internal.ui.AntUIPlugin;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.URIUtil;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.eclipse.jface.dialogs.IDialogConstants;
@@ -74,8 +73,8 @@ public class AddCustomDialog extends StatusDialog {
 	private boolean entryChanged = false;
 
 	private Combo sourceNameField;
-	private List<IAntClasspathEntry> libraryEntries;
-	private List<String> existingNames;
+	private final List<IAntClasspathEntry> libraryEntries;
+	private final List<String> existingNames;
 
 	private String noNameErrorMsg;
 	private String alreadyExistsErrorMsg;
@@ -90,7 +89,7 @@ public class AddCustomDialog extends StatusDialog {
 
 	private boolean editing = false;
 
-	private String helpContext;
+	private final String helpContext;
 
 	/**
 	 * Creates a new dialog with the given shell and title.
@@ -535,10 +534,10 @@ public class AddCustomDialog extends StatusDialog {
 			className = ((ZipEntry) file).getName();
 		} else {
 			className = ((File) file).getAbsolutePath();
-			IPath classPath = new Path(className);
+			IPath classPath = IPath.fromOSString(className);
 			IPath libraryPath = null;
 			try {
-				libraryPath = new Path(URIUtil.toURL(URIUtil.toURI(library.getEntryURL())).getPath());
+				libraryPath = IPath.fromOSString(URIUtil.toURL(URIUtil.toURI(library.getEntryURL())).getPath());
 			}
 			catch (MalformedURLException e) {
 				AntUIPlugin.log(e);

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2017 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -254,7 +254,7 @@ public class CommonViewerAdvisor extends AbstractTreeViewerAdvisor implements IN
 
 	private static final String PROP_ACTION_SERVICE_ACTION_BARS = "org.eclipse.team.ui.actionServiceActionBars"; //$NON-NLS-1$
 
-	private Set<INavigatorContentExtension> extensions = new HashSet<>();
+	private final Set<INavigatorContentExtension> extensions = new HashSet<>();
 
 	private NavigatorActionService actionService;
 
@@ -268,8 +268,8 @@ public class CommonViewerAdvisor extends AbstractTreeViewerAdvisor implements IN
 	 */
 	private static CommonViewer createViewer(Composite parent, final ISynchronizePageConfiguration configuration, IEmptyTreeListener listener) {
 		final CommonViewer v = new NavigableCommonViewer(configuration.getViewerId(), parent, SWT.MULTI | SWT.H_SCROLL | SWT.V_SCROLL, listener);
-		v.setSorter(new CommonViewerSorter());
-		v.setSorter(new TeamViewerSorter((CommonViewerSorter)v.getSorter()));
+		v.setComparator(new CommonViewerSorter());
+		v.setComparator(new TeamViewerSorter((CommonViewerSorter) v.getSorter()));
 		ISynchronizationScope scope = getScope(configuration);
 		bindTeamContentProviders(v);
 		scope.addScopeChangeListener((scope1, newMappings, newTraversals) -> {
@@ -380,7 +380,7 @@ public class CommonViewerAdvisor extends AbstractTreeViewerAdvisor implements IN
 			DecoratingStyledCellLabelProvider implements IStyledLabelProvider,
 			IFontProvider {
 
-		private IStyledLabelProvider slp;
+		private final IStyledLabelProvider slp;
 
 		public MyDecoratingStyledCellLabelProvider(IStyledLabelProvider slp,
 				ILabelDecorator decorator) {

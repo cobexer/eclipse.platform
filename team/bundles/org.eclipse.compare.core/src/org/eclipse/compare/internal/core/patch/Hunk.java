@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2011 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -17,7 +17,9 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.compare.patch.*;
+import org.eclipse.compare.patch.IFilePatchResult;
+import org.eclipse.compare.patch.IHunk;
+import org.eclipse.compare.patch.PatchConfiguration;
 import org.eclipse.core.runtime.Assert;
 
 /**
@@ -25,9 +27,11 @@ import org.eclipse.core.runtime.Assert;
  */
 public class Hunk implements IHunk {
 	private FilePatch2 fParent;
-	private int fOldStart, fOldLength;
-	private int fNewStart, fNewLength;
-	private String[] fLines;
+	private int fOldStart;
+	private final int fOldLength;
+	private int fNewStart;
+	private final int fNewLength;
+	private final String[] fLines;
 	private int hunkType;
 	private String charset = null;
 
@@ -436,7 +440,7 @@ public class Hunk implements IHunk {
 			// if the file doesn't exist use a line separator from the patch
 			return this.fLines[0].substring(LineReader.length(this.fLines[0]));
 		}
-		return System.getProperty("line.separator"); //$NON-NLS-1$
+		return System.lineSeparator();
 	}
 
 	/*

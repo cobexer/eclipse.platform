@@ -179,7 +179,7 @@ public class Setup implements Cloneable {
 
 	private String id;
 
-	private SetupManager manager;
+	private final SetupManager manager;
 
 	private String name;
 
@@ -236,7 +236,7 @@ public class Setup implements Cloneable {
 		fillClassPath(commandLine);
 		fillVMArgs(commandLine);
 		fillSystemProperties(commandLine);
-		commandLine.add("org.eclipse.core.launcher.Main");
+		commandLine.add("org.eclipse.equinox.launcher.Main");
 		fillEclipseArgs(commandLine);
 	}
 

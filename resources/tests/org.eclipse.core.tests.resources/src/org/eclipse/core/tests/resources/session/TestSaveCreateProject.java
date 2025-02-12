@@ -13,44 +13,56 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.session;
 
-import junit.framework.Test;
-import org.eclipse.core.resources.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+
+import org.assertj.core.api.InstanceOfAssertFactories;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.resources.AutomatedResourceTests;
-import org.eclipse.core.tests.session.WorkspaceSessionTestSuite;
+import org.eclipse.core.tests.harness.session.SessionTestExtension;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /**
  * Tests recovery after adding a project and not saving
  */
-public class TestSaveCreateProject extends WorkspaceSerializationTest {
-	public void test1() {
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+public class TestSaveCreateProject {
+	private static final String PROJECT = "Project";
+
+	@RegisterExtension
+	static SessionTestExtension sessionTestExtension = SessionTestExtension.forPlugin(PI_RESOURCES_TESTS)
+			.withCustomization(SessionTestExtension.createCustomWorkspace()).create();
+
+	@Test
+	@Order(1)
+	public void test1() throws CoreException {
 		/* create some resource handles */
-		IProject project = ResourcesPlugin.getWorkspace().getRoot().getProject(PROJECT);
-		try {
-			workspace.save(true, getMonitor());
+		IProject project = getWorkspace().getRoot().getProject(PROJECT);
+		getWorkspace().save(true, createTestMonitor());
 
-			project.create(getMonitor());
-			project.open(getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 	}
 
-	public void test2() {
-		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
-		assertTrue("1.0", root.exists());
-		try {
-			IResource[] children = root.members();
-			assertEquals("1.2", 1, children.length);
-			IProject project = (IProject) children[0];
-			assertTrue("1.3", project.exists());
-			assertEquals("1.4", PROJECT, project.getName());
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
+	@Test
+	@Order(2)
+	public void test2() throws CoreException {
+		IWorkspaceRoot root = getWorkspace().getRoot();
+		assertThat(root.exists()).isTrue();
+		IResource[] children = root.members();
+		assertThat(children).singleElement().asInstanceOf(InstanceOfAssertFactories.type(IProject.class))
+				.satisfies(project -> {
+					assertThat(project.exists()).isTrue();
+					assertThat(project.getName()).isEqualTo(PROJECT);
+				});
 	}
 
-	public static Test suite() {
-		return new WorkspaceSessionTestSuite(AutomatedResourceTests.PI_RESOURCES_TESTS, TestSaveCreateProject.class);
-	}
 }

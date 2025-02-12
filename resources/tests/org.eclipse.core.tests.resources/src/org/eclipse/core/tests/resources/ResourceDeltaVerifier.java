@@ -14,10 +14,11 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources;
 
+import static org.junit.Assert.fail;
+
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Map;
-
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IResourceChangeEvent;
@@ -25,8 +26,6 @@ import org.eclipse.core.resources.IResourceChangeListener;
 import org.eclipse.core.resources.IResourceDelta;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
-import org.junit.Assert;
 
 /**
  * Verifies the state of an <code>IResourceDelta</code> by comparing
@@ -51,7 +50,7 @@ import org.junit.Assert;
  * assert("2.0 "+verifier.getMessage(), verifier.isDeltaValid());
  * </code>
  */
-public class ResourceDeltaVerifier extends Assert implements IResourceChangeListener {
+public class ResourceDeltaVerifier implements IResourceChangeListener {
 	private class ExpectedChange {
 		IResource fResource;
 		IPath movedFromPath;
@@ -106,9 +105,9 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 	/**
 	 * Table of IPath -&gt; ExpectedChange
 	 */
-	private Hashtable<IPath, ExpectedChange> fExpectedChanges = new Hashtable<>();
+	private final Hashtable<IPath, ExpectedChange> fExpectedChanges = new Hashtable<>();
 	boolean fIsDeltaValid = true;
-	private StringBuilder fMessage = new StringBuilder();
+	private final StringBuilder fMessage = new StringBuilder();
 	/**
 	 * The verifier can be in one of three states.  In the initial
 	 * state, the verifier is still receiving inputs via the
@@ -165,7 +164,6 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 	 * @param resource the resource that is expected to change
 	 * @param status the type of change (ADDED, REMOVED, CHANGED)
 	 * @param changeFlags the type of change (CONTENT, SYNC, etc)
-	 * @see IResourceConstants
 	 */
 	public void addExpectedChange(IResource resource, int status, int changeFlags) {
 		addExpectedChange(resource, null, status, changeFlags, null, null);
@@ -178,8 +176,8 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 	 * @param resource the resource that is expected to change
 	 * @param status the type of change (ADDED, REMOVED, CHANGED)
 	 * @param changeFlags the type of change (CONTENT, SYNC, etc)
-	 * @param movedPath or null
-	 * @see IResourceConstants
+	 * @param movedFromPath or null
+	 * @param movedToPath or null
 	 */
 	public void addExpectedChange(IResource resource, int status, int changeFlags, IPath movedFromPath, IPath movedToPath) {
 		addExpectedChange(resource, null, status, changeFlags, movedFromPath, movedToPath);
@@ -193,8 +191,6 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 	 * @param topLevelParent Do not added expected changes above this parent
 	 * @param status the type of change (ADDED, REMOVED, CHANGED)
 	 * @param changeFlags the type of change (CONTENT, SYNC, etc)
-	 * @param movedPath or null
-	 * @see IResourceConstants
 	 */
 	public void addExpectedChange(IResource resource, IResource topLevelParent, int status, int changeFlags) {
 		addExpectedChange(resource, topLevelParent, status, changeFlags, null, null);
@@ -208,8 +204,8 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 	 * @param topLevelParent Do not added expected changes above this parent
 	 * @param status the type of change (ADDED, REMOVED, CHANGED)
 	 * @param changeFlags the type of change (CONTENT, SYNC, etc)
-	 * @param movedPath or null
-	 * @see IResourceConstants
+	 * @param movedFromPath or null
+	 * @param movedToPath or null
 	 */
 	public void addExpectedChange(IResource resource, IResource topLevelParent, int status, int changeFlags, IPath movedFromPath, IPath movedToPath) {
 		resetIfNecessary();
@@ -564,16 +560,16 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 		int formerChildStatus = expectedStatus;
 		int latterChildStatus = actualStatus;
 
-		IPath path = new Path("/a/b/c");
-		IPath path2 = new Path("/a/b/d");
+		IPath path = IPath.fromOSString("/a/b/c");
+		IPath path2 = IPath.fromOSString("/a/b/d");
 		IPath expectedFullPath = path;
 		IPath actualFullPath = path2;
 		IPath expectedMovedFromPath = path;
 		IPath actualMovedFromPath = path2;
 		IPath expectedMovedToPath = path;
 		IPath actualMovedToPath = path2;
-		IPath expectedProjectRelativePath = new Path("b/c");
-		IPath actualProjectRelativePath = new Path("b/d");
+		IPath expectedProjectRelativePath = IPath.fromOSString("b/c");
+		IPath actualProjectRelativePath = IPath.fromOSString("b/d");
 
 		comparer.fMessage.append("Checking delta for ");
 		comparer.fMessage.append(path);
@@ -802,7 +798,6 @@ public class ResourceDeltaVerifier extends Assert implements IResourceChangeList
 
 	/**
 	 * Part of the <code>IResourceChangedListener</code> interface.
-	 * @see IResourceChangedListener
 	 */
 	@Override
 	public void resourceChanged(IResourceChangeEvent e) {

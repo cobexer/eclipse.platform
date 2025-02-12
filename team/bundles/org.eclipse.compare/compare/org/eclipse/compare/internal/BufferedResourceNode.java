@@ -13,7 +13,6 @@
  *******************************************************************************/
 package org.eclipse.compare.internal;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -68,32 +67,15 @@ public class BufferedResourceNode extends ResourceNode {
 	 */
 	public void commit(IProgressMonitor pm) throws CoreException {
 		if (fDirty) {
-
 			if (fDeleteFile != null) {
 				fDeleteFile.delete(true, true, pm);
 				return;
 			}
-
-			IResource resource= getResource();
-			if (resource instanceof IFile) {
-
-				byte[] bytes= getContent();
-				ByteArrayInputStream is= new ByteArrayInputStream(bytes);
-				try {
-					IFile file= (IFile) resource;
-					if (file.exists())
-						file.setContents(is, false, true, pm);
-					else
-						file.create(is, false, pm);
-					fDirty= false;
-				} finally {
-					if (is != null)
-						try {
-							is.close();
-						} catch(IOException ex) {
-							// Silently ignored
-						}
-				}
+			IResource resource = getResource();
+			if (resource instanceof IFile file) {
+				byte[] bytes = getContent();
+				file.write(bytes, false, false, true, pm);
+				fDirty = false;
 			}
 		}
 	}
@@ -127,12 +109,11 @@ public class BufferedResourceNode extends ResourceNode {
 		if (other instanceof IStreamContentAccessor && child instanceof IEditableContent) {
 			IEditableContent dst= (IEditableContent) child;
 
-			try {
-				InputStream is= ((IStreamContentAccessor)other).getContents();
-				byte[] bytes= Utilities.readBytes(is);
+			try (InputStream is = ((IStreamContentAccessor) other).getContents()) {
+				byte[] bytes = is.readAllBytes();
 				if (bytes != null)
 					dst.setContent(bytes);
-			} catch (CoreException ex) {
+			} catch (CoreException | IOException ex) {
 				// NeedWork
 			}
 		}

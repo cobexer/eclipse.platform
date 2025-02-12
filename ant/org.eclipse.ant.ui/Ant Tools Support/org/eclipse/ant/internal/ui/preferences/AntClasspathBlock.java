@@ -31,7 +31,6 @@ import org.eclipse.ant.internal.ui.launchConfigurations.VariableInputDialog;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.eclipse.jdt.ui.wizards.BuildPathDialogAccess;
 import org.eclipse.jface.dialogs.IDialogConstants;
@@ -67,7 +66,7 @@ public class AntClasspathBlock {
 	private Button downButton;
 	private Button removeButton;
 
-	private AntClasspathLabelProvider labelProvider = new AntClasspathLabelProvider(this);
+	private final AntClasspathLabelProvider labelProvider = new AntClasspathLabelProvider(this);
 	private Button addFolderButton;
 	private Button addJARButton;
 	private Button addExternalJARButton;
@@ -76,7 +75,7 @@ public class AntClasspathBlock {
 
 	private String antHome;
 
-	private IDialogSettings dialogSettings = PlatformUI.getDialogSettingsProvider(FrameworkUtil.getBundle(AntClasspathBlock.class)).getDialogSettings();
+	private final IDialogSettings dialogSettings = PlatformUI.getDialogSettingsProvider(FrameworkUtil.getBundle(AntClasspathBlock.class)).getDialogSettings();
 
 	private IAntBlockContainer container;
 
@@ -84,7 +83,7 @@ public class AntClasspathBlock {
 
 	private IClasspathEntry currentParent;
 
-	private SelectionListener selectionListener = new SelectionAdapter() {
+	private final SelectionListener selectionListener = new SelectionAdapter() {
 		@Override
 		public void widgetSelected(SelectionEvent e) {
 			Object source = e.getSource();
@@ -247,7 +246,7 @@ public class AntClasspathBlock {
 		if (result == null) {
 			return;
 		}
-		IPath filterPath = new Path(dialog.getFilterPath());
+		IPath filterPath = IPath.fromOSString(dialog.getFilterPath());
 		AntClasspathContentProvider contentProvider = (AntClasspathContentProvider) treeViewer.getContentProvider();
 		contentProvider.setRefreshEnabled(false);
 		for (String jarName : dialog.getFileNames()) {
@@ -286,7 +285,7 @@ public class AntClasspathBlock {
 			if (url != null) {
 				String fileName = url.getFile();
 				if (fileName != null && fileName.length() > 0) {
-					for (IFile file : ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(new Path(fileName).toFile().toURI())) {
+					for (IFile file : ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(IPath.fromOSString(fileName).toFile().toURI())) {
 						selectedPaths.add(file.getFullPath());
 					}
 				}

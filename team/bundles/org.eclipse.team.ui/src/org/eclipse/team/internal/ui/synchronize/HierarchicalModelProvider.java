@@ -94,6 +94,7 @@ public class HierarchicalModelProvider extends SynchronizeModelProvider {
 		return hierarchicalDescriptor;
 	}
 
+	@Override
 	public ViewerComparator getViewerComparator() {
 		return new SynchronizeModelElementComparator();
 	}
@@ -106,7 +107,6 @@ public class HierarchicalModelProvider extends SynchronizeModelProvider {
 	 * Invoked by the <code>buildModelObject</code> method to create
 	 * the childen of the given node. This method can be overriden
 	 * by subclasses but subclasses should inv
-	 * @param container
 	 * @return the diff elements
 	 */
 	protected IDiffElement[] createModelObjects(ISynchronizeModelElement container) {
@@ -193,8 +193,8 @@ public class HierarchicalModelProvider extends SynchronizeModelProvider {
 		for (SyncInfo info : infos) {
 			set.add(info.getLocal().getProject());
 		}
-		for (Object element : set) {
-			addResource((IResource)element);
+		for (IProject element : set) {
+			addResource(element);
 		}
 	}
 

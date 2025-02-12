@@ -24,13 +24,40 @@
  *******************************************************************************/
 package org.eclipse.core.internal.jobs;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import org.eclipse.core.internal.runtime.RuntimeLog;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.jobs.*;
-import org.eclipse.osgi.service.debug.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.ProgressMonitorWrapper;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.IJobChangeListener;
+import org.eclipse.core.runtime.jobs.IJobManager;
+import org.eclipse.core.runtime.jobs.ILock;
+import org.eclipse.core.runtime.jobs.ISchedulingRule;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
+import org.eclipse.core.runtime.jobs.JobGroup;
+import org.eclipse.core.runtime.jobs.LockListener;
+import org.eclipse.core.runtime.jobs.MultiRule;
+import org.eclipse.core.runtime.jobs.ProgressProvider;
+import org.eclipse.osgi.service.debug.DebugOptions;
+import org.eclipse.osgi.service.debug.DebugOptionsListener;
+import org.eclipse.osgi.service.debug.DebugTrace;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -48,8 +75,6 @@ import org.eclipse.osgi.util.NLS;
  *
  * WorkerPool -&gt; JobManager.implicitJobs -&gt; JobManager.lock -&gt;
  * InternalJob.jobStateLock or InternalJobGroup.jobGroupStateLock
- *
- * @ThreadSafe
  */
 public class JobManager implements IJobManager, DebugOptionsListener {
 
@@ -78,6 +103,7 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 	private static final String OPTION_DEBUG_JOBS = PI_JOBS + "/jobs"; //$NON-NLS-1$
 	private static final String OPTION_LOCKS = PI_JOBS + "/jobs/locks"; //$NON-NLS-1$
 	private static final String OPTION_SHUTDOWN = PI_JOBS + "/jobs/shutdown"; //$NON-NLS-1$
+	private static final String OPTION_DEBUG_BLOCKED_UNBLOCKED = PI_JOBS + "/jobs/blockedunblocked"; //$NON-NLS-1$
 
 	static DebugTrace DEBUG_TRACE;
 	static boolean DEBUG = false;
@@ -87,6 +113,7 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 	static boolean DEBUG_DEADLOCK = false;
 	static boolean DEBUG_LOCKS = false;
 	static boolean DEBUG_SHUTDOWN = false;
+	static boolean DEBUG_BLOCKED_UNBLOCKED = false;
 
 	/**
 	 * The singleton job manager instance. It must be a singleton because
@@ -145,7 +172,7 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 	/**
 	 * A job listener to check for the cancellation and completion of the job groups.
 	 */
-	private final IJobChangeListener jobGroupUpdater = new JobGroupUpdater();
+	private final IJobChangeListener jobGroupUpdater = IJobChangeListener.onDone(this::updateJobGroup);
 
 	private final LockManager lockManager = new LockManager();
 
@@ -528,7 +555,6 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 
 	/**
 	 * Returns a new progress monitor for this job.  Never returns null.
-	 * @GuardedBy("lock")
 	 */
 	private IProgressMonitor createMonitor(Job job) {
 		IProgressMonitor monitor = null;
@@ -694,16 +720,18 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 		}
 		internalWorker.cancel();
 		if (toCancel != null) {
-			for (Job element : toCancel) {
-				String jobName = printJobName(element);
+			for (Job job : toCancel) {
+				String jobName = printJobName(job) + " " + printState(job); //$NON-NLS-1$
+				Thread thread = job.getThread();
+				if (thread != null) {
+					StackTraceElement[] stackTrace = thread.getStackTrace();
+					for (StackTraceElement stackTraceElement : stackTrace) {
+						jobName += "\n\t at " + stackTraceElement; //$NON-NLS-1$
+					}
+				}
 				//this doesn't need to be translated because it's just being logged
 				String msg = "Job found still running after platform shutdown.  Jobs should be canceled by the plugin that scheduled them during shutdown: " + jobName; //$NON-NLS-1$
 				RuntimeLog.log(new Status(IStatus.WARNING, JobManager.PI_JOBS, JobManager.PLUGIN_ERROR, msg, null));
-
-				// TODO the RuntimeLog.log in its current implementation won't produce a log
-				// during this stage of shutdown. For now add a standard error output.
-				// One the logging story is improved, the System.err output below can be removed:
-				System.err.println(msg);
 			}
 		}
 		synchronized (lock) {
@@ -1280,6 +1308,7 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 		DEBUG_DEADLOCK = options.getBooleanOption(OPTION_DEADLOCK_ERROR, false);
 		DEBUG_LOCKS = options.getBooleanOption(OPTION_LOCKS, false);
 		DEBUG_SHUTDOWN = options.getBooleanOption(OPTION_SHUTDOWN, false);
+		DEBUG_BLOCKED_UNBLOCKED = options.getBooleanOption(OPTION_DEBUG_BLOCKED_UNBLOCKED, false);
 	}
 
 	@Override
@@ -1308,6 +1337,10 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 			reason = new JobStatus(IStatus.INFO, (Job) blockingJob, msg);
 		}
 		monitor.setBlocked(reason);
+
+		if (DEBUG_BLOCKED_UNBLOCKED) {
+			JobManager.debug(reason.getMessage());
+		}
 	}
 
 	/**
@@ -1318,6 +1351,9 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 	 */
 	final void reportUnblocked(IProgressMonitor monitor) {
 		monitor.clearBlocked();
+		if (DEBUG_BLOCKED_UNBLOCKED) {
+			JobManager.debug(JobMessages.jobs_unblocked);
+		}
 	}
 
 	@Override
@@ -1759,7 +1795,10 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 				synchronized (internal.jobStateLock) {
 					if (internal.internalGetState() == InternalJob.ABOUT_TO_RUN) {
 						if (shouldReallyRun && !internal.isAboutToRunCanceled()) {
-							internal.setProgressMonitor(createMonitor(j));
+							// only set the monitor if it wasn't already set.
+							if (internal.getProgressMonitor() == null) {
+								internal.setProgressMonitor(createMonitor(j));
+							}
 							//change from ABOUT_TO_RUN to RUNNING
 							internal.setThread(worker);
 							internal.internalSetState(Job.RUNNING);
@@ -1880,68 +1919,70 @@ public class JobManager implements IJobManager, DebugOptionsListener {
 	}
 
 	/**
-	 * Listens for the job completion events and checks for the job group cancellation,
-	 * computes and logs the group result.
+	 * Listens for the job completion events and checks for the job group
+	 * cancellation, computes and logs the group result.
+	 *
+	 * @param event the job change event
 	 */
-	private class JobGroupUpdater extends JobChangeAdapter {
+	private void updateJobGroup(IJobChangeEvent event) {
+		InternalJob job = event.getJob();
+		InternalJobGroup jobGroup = job.getJobGroup();
+		if (jobGroup == null)
+			return;
+		IStatus jobResult = event.getResult();
+		boolean reschedule = ((JobChangeEvent) event).reschedule;
 
-		@Override
-		public void done(IJobChangeEvent event) {
-			InternalJob job = event.getJob();
-			InternalJobGroup jobGroup = job.getJobGroup();
-			if (jobGroup == null)
-				return;
-			IStatus jobResult = event.getResult();
-			boolean reschedule = ((JobChangeEvent) event).reschedule;
-
-			int jobGroupState;
-			int activeJobsCount;
-			int failedJobsCount;
-			int canceledJobsCount;
-			int seedJobsRemainingCount;
-			List<IStatus> jobResults = Collections.emptyList();
-			synchronized (lock) {
-				// Collect the required details to check for the group cancellation and completion
-				// outside the synchronized block.
-				jobGroupState = jobGroup.getState();
-				activeJobsCount = jobGroup.getActiveJobsCount();
-				failedJobsCount = jobGroup.getFailedJobsCount();
-				canceledJobsCount = jobGroup.getCanceledJobsCount();
-				seedJobsRemainingCount = jobGroup.getSeedJobsRemainingCount();
-				if (activeJobsCount == 0)
-					jobResults = jobGroup.getCompletedJobResults();
-			}
-
-			// Check for the group completion.
-			if (!reschedule && jobGroupState != JobGroup.NONE && activeJobsCount == 0 && (seedJobsRemainingCount <= 0 || jobGroupState == JobGroup.CANCELING)) {
-				// Must perform this outside the sync block to avoid a potential deadlock
-				MultiStatus jobGroupResult = jobGroup.computeGroupResult(jobResults);
-				Assert.isLegal(jobGroupResult != null, "The group result should not be null"); //$NON-NLS-1$
-				boolean isJobGroupCompleted = false;
-				synchronized (lock) {
-					// If more jobs were added to the group while were computing the result, the job group
-					// remains in the ACTIVE state and the computed result is discarded to be recomputed later,
-					// after the new jobs finish.
-					if (jobGroup.getState() != JobGroup.NONE && jobGroup.getActiveJobsCount() == 0) {
-						jobGroup.endJobGroup(jobGroupResult);
-						isJobGroupCompleted = true;
-					}
-				}
-
-				// If the job group is completing, add the job group's status to the event
-				// and log errors and warnings.
-				if (isJobGroupCompleted) {
-					((JobChangeEvent) event).jobGroupResult = jobGroupResult;
-					if (jobGroupResult.matches(IStatus.ERROR | IStatus.WARNING))
-						RuntimeLog.log(jobGroupResult);
-				}
-
-				return;
-			}
-
-			if (jobGroupState != JobGroup.CANCELING && jobGroup.shouldCancel(jobResult, failedJobsCount, canceledJobsCount))
-				cancel(jobGroup, true);
+		int jobGroupState;
+		int activeJobsCount;
+		int failedJobsCount;
+		int canceledJobsCount;
+		int seedJobsRemainingCount;
+		List<IStatus> jobResults = Collections.emptyList();
+		synchronized (lock) {
+			// Collect the required details to check for the group cancellation and
+			// completion
+			// outside the synchronized block.
+			jobGroupState = jobGroup.getState();
+			activeJobsCount = jobGroup.getActiveJobsCount();
+			failedJobsCount = jobGroup.getFailedJobsCount();
+			canceledJobsCount = jobGroup.getCanceledJobsCount();
+			seedJobsRemainingCount = jobGroup.getSeedJobsRemainingCount();
+			if (activeJobsCount == 0)
+				jobResults = jobGroup.getCompletedJobResults();
 		}
+
+		// Check for the group completion.
+		if (!reschedule && jobGroupState != JobGroup.NONE && activeJobsCount == 0
+				&& (seedJobsRemainingCount <= 0 || jobGroupState == JobGroup.CANCELING)) {
+			// Must perform this outside the sync block to avoid a potential deadlock
+			MultiStatus jobGroupResult = jobGroup.computeGroupResult(jobResults);
+			Assert.isLegal(jobGroupResult != null, "The group result should not be null"); //$NON-NLS-1$
+			boolean isJobGroupCompleted = false;
+			synchronized (lock) {
+				// If more jobs were added to the group while were computing the result, the job
+				// group
+				// remains in the ACTIVE state and the computed result is discarded to be
+				// recomputed later,
+				// after the new jobs finish.
+				if (jobGroup.getState() != JobGroup.NONE && jobGroup.getActiveJobsCount() == 0) {
+					jobGroup.endJobGroup(jobGroupResult);
+					isJobGroupCompleted = true;
+				}
+			}
+
+			// If the job group is completing, add the job group's status to the event
+			// and log errors and warnings.
+			if (isJobGroupCompleted) {
+				((JobChangeEvent) event).jobGroupResult = jobGroupResult;
+				if (jobGroupResult.matches(IStatus.ERROR | IStatus.WARNING))
+					RuntimeLog.log(jobGroupResult);
+			}
+
+			return;
+		}
+
+		if (jobGroupState != JobGroup.CANCELING && jobGroup.shouldCancel(jobResult, failedJobsCount, canceledJobsCount))
+			cancel(jobGroup, true);
 	}
 
 	/** for debugging only **/

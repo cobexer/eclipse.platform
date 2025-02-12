@@ -15,14 +15,19 @@ package org.eclipse.core.internal.runtime;
 
 import java.util.HashSet;
 import java.util.Set;
-import org.eclipse.core.runtime.*;
-import org.eclipse.equinox.log.*;
+import org.eclipse.core.runtime.ILog;
+import org.eclipse.core.runtime.ILogListener;
+import org.eclipse.core.runtime.ISafeRunnable;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Plugin;
+import org.eclipse.core.runtime.SafeRunner;
+import org.eclipse.equinox.log.LogFilter;
+import org.eclipse.equinox.log.Logger;
+import org.eclipse.equinox.log.SynchronousLogListener;
 import org.osgi.framework.Bundle;
 import org.osgi.service.log.LogEntry;
 
-/**
- *
- */
 public class Log implements ILog, SynchronousLogListener, LogFilter {
 	final Bundle bundle;
 	private final Logger logger;
@@ -64,6 +69,15 @@ public class Log implements ILog, SynchronousLogListener, LogFilter {
 	 */
 	@Override
 	public void log(final IStatus status) {
+		if (logger == null) {
+			// can happen on system shutdown...
+			System.out.println(status);
+			Throwable exception = status.getException();
+			if (exception != null) {
+				exception.printStackTrace(System.out);
+			}
+			return;
+		}
 		// Log to the logger
 		logger.log(PlatformLogWriter.getLog(status), PlatformLogWriter.getLevel(status), status.getMessage(), status.getException());
 	}

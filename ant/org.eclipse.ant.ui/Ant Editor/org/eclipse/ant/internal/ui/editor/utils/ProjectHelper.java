@@ -102,7 +102,7 @@ public class ProjectHelper extends ProjectHelper2 {
 		private UnknownElement task = null;
 		private Task currentTask = null;
 
-		private Map<String, String> fNormalizedFileNames = new HashMap<>();
+		private final Map<String, String> fNormalizedFileNames = new HashMap<>();
 
 		@Override
 		public AntHandler onStartChild(String uri, String tag, String qname, Attributes attrs, AntXMLContext context) {
@@ -280,8 +280,8 @@ public class ProjectHelper extends ProjectHelper2 {
 	/**
 	 * Gets the associated project name by the absolute build-file path
 	 *
-	 * @param buildFile
-	 *            The file
+	 * @param absolutePath
+	 *            The file path as String
 	 * @return The project name
 	 */
 	public static String getProjectNameOfBuildFile(String absolutePath) {
@@ -613,23 +613,8 @@ public class ProjectHelper extends ProjectHelper2 {
 		AntXMLContext context = (AntXMLContext) project.getReference("ant.parsing.context"); //$NON-NLS-1$
 		// switch to using "our" handler so parsing will continue on hitting errors.
 		handler = new RootHandler(context, mainHandler);
-		InputStream stream = null;
-		try {
-			InputSource inputSource = null;
-			if ((source instanceof File)) {
-				buildFile = (File) source;
-				buildFile = getFileUtils().normalize(buildFile.getAbsolutePath());
-				stream = new FileInputStream(buildFile);
-				inputSource = new InputSource(stream);
-			} else if (source instanceof String) {
-				IAntModel model = getAntModel();
-				String encoding = IAntCoreConstants.UTF_8;
-				if (model != null) {
-					encoding = model.getEncoding();
-				}
-				stream = new ByteArrayInputStream(((String) source).getBytes(encoding));
-				inputSource = new InputSource(stream);
-			}
+		try (InputStream stream = createInputStream(source)) {
+			InputSource inputSource = stream == null ? null : new InputSource(stream);
 
 			/**
 			 * SAX 2 style parser used to parse the given file.
@@ -676,16 +661,22 @@ public class ProjectHelper extends ProjectHelper2 {
 		catch (IOException exc) {
 			throw new BuildException(exc);
 		}
-		finally {
-			try {
-				if (stream != null) {
-					stream.close();
-				}
+	}
+
+	private InputStream createInputStream(Object source) throws FileNotFoundException, UnsupportedEncodingException {
+		if ((source instanceof File)) {
+			buildFile = (File) source;
+			buildFile = getFileUtils().normalize(buildFile.getAbsolutePath());
+			return new FileInputStream(buildFile);
+		} else if (source instanceof String) {
+			IAntModel model = getAntModel();
+			String encoding = IAntCoreConstants.UTF_8;
+			if (model != null) {
+				encoding = model.getEncoding();
 			}
-			catch (IOException ioe) {
-				// ignore this
-			}
+			return new ByteArrayInputStream(((String) source).getBytes(encoding));
 		}
+		return null;
 	}
 
 	/**
@@ -727,7 +718,7 @@ public class ProjectHelper extends ProjectHelper2 {
 				newCurrent.setProject(project);
 				newCurrent.setName(IAntCoreConstants.EMPTY_STRING);
 				context.setCurrentTarget(newCurrent);
-				context.setCurrentTargets(new HashMap<String, Target>());
+				context.setCurrentTargets(new HashMap<>());
 				context.setImplicitTarget(newCurrent);
 				parse(project, source, new RootHandler(context, mainHandler));
 			}
@@ -738,7 +729,7 @@ public class ProjectHelper extends ProjectHelper2 {
 			}
 		} else {
 			// top level file
-			context.setCurrentTargets(new HashMap<String, Target>());
+			context.setCurrentTargets(new HashMap<>());
 			parse(project, source, new RootHandler(context, mainHandler));
 		}
 	}

@@ -66,7 +66,7 @@ public class LocalHistoryTableProvider {
 		private Image dateImage;
 		private Font currentRevisionFont;
 
-		private IPropertyChangeListener themeListener = event -> LocalHistoryTableProvider.this.viewer.refresh();
+		private final IPropertyChangeListener themeListener = event -> LocalHistoryTableProvider.this.viewer.refresh();
 
 		public LocalHistoryLabelProvider() {
 			PlatformUI.getWorkbench().getThemeManager().addPropertyChangeListener(themeListener);
@@ -177,16 +177,15 @@ public class LocalHistoryTableProvider {
 	 */
 	private class HistoryComparator extends ViewerComparator {
 		private boolean reversed = false;
-		private int columnNumber;
+		private final int columnNumber;
 
 		// column headings:	"Revision" "Tags" "Date" "Author" "Comment"
-		private int[][] SORT_ORDERS_BY_COLUMN = {
+		private final int[][] SORT_ORDERS_BY_COLUMN = {
 				{COL_DATE}, /* date */
 		};
 
 		/**
 		 * The constructor.
-		 * @param columnNumber
 		 */
 		public HistoryComparator(int columnNumber) {
 			this.columnNumber = columnNumber;
@@ -253,7 +252,6 @@ public class LocalHistoryTableProvider {
 
 		/**
 		 * Sets the sorting order.
-		 * @param newReversed
 		 */
 		public void setReversed(boolean newReversed) {
 			reversed = newReversed;
@@ -290,11 +288,18 @@ public class LocalHistoryTableProvider {
 	 * Create a TreeViewer that can be used to display a list of IFile instances.
 	 * This method provides the labels and sorter but does not provide a content provider
 	 *
-	 * @param parent
 	 * @return TableViewer
 	 */
 	public TreeViewer createTree(Composite parent) {
-		Tree tree = new Tree(parent, SWT.H_SCROLL | SWT.V_SCROLL | SWT.MULTI | SWT.FULL_SELECTION);
+		return createTree(parent, true);
+	}
+
+	public TreeViewer createTree(Composite parent, boolean allowMultiSelection) {
+		int style = SWT.H_SCROLL | SWT.V_SCROLL | SWT.FULL_SELECTION;
+		if (allowMultiSelection) {
+			style = style | SWT.MULTI;
+		}
+		Tree tree = new Tree(parent, style);
 		tree.setHeaderVisible(true);
 		tree.setLinesVisible(false);
 

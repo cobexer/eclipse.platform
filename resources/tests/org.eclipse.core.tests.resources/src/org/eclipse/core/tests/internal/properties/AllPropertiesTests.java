@@ -10,13 +10,16 @@
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
+ *     Latha Patil (ETAS GmbH) - GitHub Issue 468
  *******************************************************************************/
 package org.eclipse.core.tests.internal.properties;
 
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
 
-@RunWith(Suite.class)
-@Suite.SuiteClasses({ PropertyManagerTest.class })
+@Suite
+@SelectClasses({ //
+		PropertyManagerTest.class, //
+})
 public class AllPropertiesTests {
 }

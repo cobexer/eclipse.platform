@@ -16,12 +16,41 @@
  *******************************************************************************/
 package org.eclipse.core.internal.resources;
 
-import java.io.*;
-import org.eclipse.core.filesystem.*;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileInfo;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.provider.FileInfo;
 import org.eclipse.core.internal.preferences.EclipsePreferences;
-import org.eclipse.core.internal.utils.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.internal.utils.BitMask;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFileState;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.core.runtime.content.IContentDescription;
 import org.eclipse.core.runtime.content.IContentTypeManager;
 import org.eclipse.core.runtime.jobs.ISchedulingRule;
@@ -40,7 +69,7 @@ public class File extends Resource implements IFile {
 	public void appendContents(InputStream content, int updateFlags, IProgressMonitor monitor) throws CoreException {
 		String message = NLS.bind(Messages.resources_settingContents, getFullPath());
 		SubMonitor subMonitor = SubMonitor.convert(monitor, message, 100);
-		try {
+		try (content) {
 			Assert.isNotNull(content, "Content cannot be null."); //$NON-NLS-1$
 			if (workspace.shouldValidate)
 				workspace.validateSave(this);
@@ -59,9 +88,10 @@ public class File extends Resource implements IFile {
 			} finally {
 				workspace.endOperation(rule, true);
 			}
+		} catch (IOException streamCloseIgnored) {
+			// ignore;
 		} finally {
 			subMonitor.done();
-			FileUtil.safeClose(content);
 		}
 	}
 
@@ -100,52 +130,15 @@ public class File extends Resource implements IFile {
 	public void create(InputStream content, int updateFlags, IProgressMonitor monitor) throws CoreException {
 		String message = NLS.bind(Messages.resources_creating, getFullPath());
 		SubMonitor subMonitor = SubMonitor.convert(monitor, message, 100);
-		try {
+		try (content) {
 			checkValidPath(path, FILE, true);
 			final ISchedulingRule rule = workspace.getRuleFactory().createRule(this);
-			SubMonitor newChild = subMonitor.newChild(1);
 			try {
-				workspace.prepareOperation(rule, newChild);
-				checkDoesNotExist();
-				Container parent = (Container) getParent();
-				ResourceInfo info = parent.getResourceInfo(false, false);
-				parent.checkAccessible(getFlags(info));
-				checkValidGroupContainer(parent, false, false);
-
+				workspace.prepareOperation(rule, subMonitor.newChild(1));
+				checkCreatable();
 				workspace.beginOperation(true);
 				IFileStore store = getStore();
-				IFileInfo localInfo = store.fetchInfo();
-				if (BitMask.isSet(updateFlags, IResource.FORCE)) {
-					if (!Workspace.caseSensitive) {
-						if (localInfo.exists()) {
-							String name = getLocalManager().getLocalName(store);
-							if (name == null || localInfo.getName().equals(name)) {
-								delete(true, null);
-							} else {
-								// The file system is not case sensitive and there is already a file
-								// under this location.
-								message = NLS.bind(Messages.resources_existsLocalDifferentCase, new Path(store.toString()).removeLastSegments(1).append(name).toOSString());
-								throw new ResourceException(IResourceStatus.CASE_VARIANT_EXISTS, getFullPath(), message, null);
-							}
-						}
-					}
-				} else {
-					if (localInfo.exists()) {
-						//return an appropriate error message for case variant collisions
-						if (!Workspace.caseSensitive) {
-							String name = getLocalManager().getLocalName(store);
-							if (name != null && !localInfo.getName().equals(name)) {
-								message = NLS.bind(Messages.resources_existsLocalDifferentCase, new Path(store.toString()).removeLastSegments(1).append(name).toOSString());
-								throw new ResourceException(IResourceStatus.CASE_VARIANT_EXISTS, getFullPath(), message, null);
-							}
-						}
-						message = NLS.bind(Messages.resources_fileExists, store.toString());
-						throw new ResourceException(IResourceStatus.FAILED_WRITE_LOCAL, getFullPath(), message, null);
-					}
-				}
-				subMonitor.worked(40);
-
-				info = workspace.createResource(this, updateFlags);
+				IFileInfo localInfo = create(updateFlags, subMonitor.newChild(40), store);
 				boolean local = content != null;
 				if (local) {
 					try {
@@ -160,9 +153,53 @@ public class File extends Resource implements IFile {
 						throw e;
 					}
 				}
-				internalSetLocal(local, DEPTH_ZERO);
-				if (!local)
-					getResourceInfo(true, true).clearModificationStamp();
+				setLocal(local);
+			} catch (OperationCanceledException e) {
+				workspace.getWorkManager().operationCanceled();
+				throw e;
+			} finally {
+				workspace.endOperation(rule, true);
+			}
+		} catch (IOException streamCloseIgnored) {
+			// ignore;
+		} finally {
+			subMonitor.done();
+		}
+	}
+
+	@Override
+	public void create(InputStream content, boolean force, IProgressMonitor monitor) throws CoreException {
+		// funnel all operations to central method
+		create(content, (force ? IResource.FORCE : IResource.NONE), monitor);
+	}
+
+	@Override
+	public void create(byte[] content, int updateFlags, IProgressMonitor monitor) throws CoreException {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, NLS.bind(Messages.resources_creating, getFullPath()), 100);
+		try {
+			checkValidPath(path, FILE, true);
+			final ISchedulingRule rule = workspace.getRuleFactory().createRule(this);
+			try {
+				workspace.prepareOperation(rule, subMonitor.newChild(1));
+				checkCreatable();
+				workspace.beginOperation(true);
+				IFileStore store = getStore();
+				IFileInfo localInfo = create(updateFlags, subMonitor.newChild(40), store);
+				boolean local = content != null;
+				if (local) {
+					try {
+						internalSetContents(content, localInfo, updateFlags, false, subMonitor.newChild(59));
+					} catch (CoreException | OperationCanceledException e) {
+						// CoreException when a problem happened creating the file on disk
+						// OperationCanceledException when the operation of setting contents has been
+						// canceled
+						// In either case delete from the workspace and disk
+						workspace.deleteResource(this);
+						store.delete(EFS.NONE, null);
+						throw e;
+					}
+				}
+				setLocal(local);
 			} catch (OperationCanceledException e) {
 				workspace.getWorkManager().operationCanceled();
 				throw e;
@@ -171,14 +208,51 @@ public class File extends Resource implements IFile {
 			}
 		} finally {
 			subMonitor.done();
-			FileUtil.safeClose(content);
 		}
 	}
 
-	@Override
-	public void create(InputStream content, boolean force, IProgressMonitor monitor) throws CoreException {
-		// funnel all operations to central method
-		create(content, (force ? IResource.FORCE : IResource.NONE), monitor);
+	void checkCreatable() throws CoreException {
+		checkDoesNotExist();
+		Container parent = (Container) getParent();
+		ResourceInfo info = parent.getResourceInfo(false, false);
+		parent.checkAccessible(getFlags(info));
+		checkValidGroupContainer(parent, false, false);
+	}
+
+	IFileInfo create(int updateFlags, IProgressMonitor subMonitor, IFileStore store)
+			throws CoreException, ResourceException {
+		String message;
+		IFileInfo localInfo;
+		if (BitMask.isSet(updateFlags, IResource.FORCE)) {
+			// Assume  the file does not exist - otherwise implementation fails later
+			// during actual write
+			localInfo = new FileInfo(getName()); // with exists==false
+		} else {
+			localInfo=store.fetchInfo();
+			if (localInfo.exists()) {
+				// return an appropriate error message for case variant collisions
+				if (!Workspace.caseSensitive) {
+					String name = getLocalManager().getLocalName(store);
+					if (name != null && !localInfo.getName().equals(name)) {
+						message = NLS.bind(Messages.resources_existsLocalDifferentCase,
+								IPath.fromOSString(store.toString()).removeLastSegments(1).append(name).toOSString());
+						throw new ResourceException(IResourceStatus.CASE_VARIANT_EXISTS, getFullPath(), message, null);
+					}
+				}
+				message = NLS.bind(Messages.resources_fileExists, store.toString());
+				throw new ResourceException(IResourceStatus.FAILED_WRITE_LOCAL, getFullPath(), message, null);
+			}
+		}
+		subMonitor.done();
+
+		workspace.createResource(this, updateFlags);
+		return localInfo;
+	}
+
+	private void setLocal(boolean local) throws CoreException {
+		internalSetLocal(local, DEPTH_ZERO);
+		if (!local)
+			getResourceInfo(true, true).clearModificationStamp();
 	}
 
 	@Override
@@ -268,6 +342,7 @@ public class File extends Resource implements IFile {
 		return getContents(getLocalManager().isLightweightAutoRefreshEnabled());
 	}
 
+	/** like {@link #readAllBytes()} **/
 	@Override
 	public InputStream getContents(boolean force) throws CoreException {
 		ResourceInfo info = getResourceInfo(false, false);
@@ -275,6 +350,17 @@ public class File extends Resource implements IFile {
 		checkAccessible(flags);
 		checkLocal(flags, DEPTH_ZERO);
 		return getLocalManager().read(this, force, null);
+	}
+
+	/** like {@link #getContents(boolean)} with parameter force=true **/
+	@Override
+	public byte[] readAllBytes() throws CoreException {
+		boolean force = true;
+		ResourceInfo info = getResourceInfo(false, false);
+		int flags = getFlags(info);
+		checkAccessible(flags);
+		checkLocal(flags, DEPTH_ZERO);
+		return getLocalManager().readAllBytes(this, force, null);
 	}
 
 	@Deprecated
@@ -305,6 +391,68 @@ public class File extends Resource implements IFile {
 		workspace.getAliasManager().updateAliases(this, getStore(), IResource.DEPTH_ZERO, monitor);
 	}
 
+	protected void internalSetContents(byte[] content, IFileInfo fileInfo, int updateFlags, boolean append,
+			IProgressMonitor monitor) throws CoreException {
+		if (content == null)
+			content = new byte[0];
+		getLocalManager().write(this, content, fileInfo, updateFlags, append, monitor);
+		updateMetadataFiles();
+		workspace.getAliasManager().updateAliases(this, getStore(), IResource.DEPTH_ZERO, monitor);
+	}
+
+	static void internalSetMultipleContents(ConcurrentMap<File, byte[]> filesToCreate, int updateFlags, boolean append,
+			IProgressMonitor monitor, ExecutorService executorService) throws CoreException {
+		SubMonitor subMonitor = SubMonitor.convert(monitor, filesToCreate.size());
+		List<Future<CoreException>> futures = new ArrayList<>(filesToCreate.size());
+		for (Entry<File, byte[]> e : filesToCreate.entrySet()) {
+			Future<CoreException> future = executorService.submit(() -> {
+				try {
+					File file = e.getKey();
+					byte[] content = e.getValue();
+					writeSingle(updateFlags, append, subMonitor.slice(1), file, content);
+				} catch (CoreException ce) {
+					return ce;
+				}
+				return null;
+			});
+			futures.add(future);
+		}
+		CoreException ex = null;
+		for (Future<CoreException> f : futures) {
+			CoreException ce;
+			try {
+				ce = f.get();
+			} catch (InterruptedException | ExecutionException e) {
+				ce = new CoreException(Status.error("Error during parallel IO", e)); //$NON-NLS-1$
+			}
+			if (ce != null) {
+				if (ex == null) {
+					ex = ce;
+				} else {
+					ex.addSuppressed(ce);
+				}
+			}
+		}
+		if (ex != null) {
+			ex.addSuppressed(new IllegalStateException("Stacktrace of invoking parallel IO")); //$NON-NLS-1$
+			throw ex;
+		}
+		NullProgressMonitor npm = new NullProgressMonitor();
+		for (File file : filesToCreate.keySet()) {
+			file.updateMetadataFiles();
+			file.workspace.getAliasManager().updateAliases(file, file.getStore(), IResource.DEPTH_ZERO, npm);
+			file.setLocal(true);
+		}
+	}
+
+	private static void writeSingle(int updateFlags, boolean append, IProgressMonitor monitor, File file,
+			byte[] content) throws CoreException, ResourceException {
+		IFileStore store = file.getStore();
+		NullProgressMonitor npm = new NullProgressMonitor();
+		IFileInfo localInfo = file.create(updateFlags, npm, store);
+		file.getLocalManager().write(file, content, localInfo, updateFlags, append, monitor);
+	}
+
 	/**
 	 * Optimized refreshLocal for files.  This implementation does not block the workspace
 	 * for the common case where the file exists both locally and on the file system, and
@@ -325,6 +473,38 @@ public class File extends Resource implements IFile {
 	public void setContents(InputStream content, int updateFlags, IProgressMonitor monitor) throws CoreException {
 		String message = NLS.bind(Messages.resources_settingContents, getFullPath());
 		SubMonitor subMonitor = SubMonitor.convert(monitor, message, 100);
+		try (content) {
+			if (workspace.shouldValidate)
+				workspace.validateSave(this);
+			final ISchedulingRule rule = workspace.getRuleFactory().modifyRule(this);
+			SubMonitor newChild = subMonitor.newChild(1);
+			try {
+				workspace.prepareOperation(rule, newChild);
+				ResourceInfo info = getResourceInfo(false, false);
+				checkAccessible(getFlags(info));
+				workspace.beginOperation(true);
+				IFileInfo fileInfo = getStore().fetchInfo();
+				if (BitMask.isSet(updateFlags, IResource.DERIVED)) {
+					// update of derived flag during IFile.write:
+					info.set(ICoreConstants.M_DERIVED);
+				}
+				internalSetContents(content, fileInfo, updateFlags, false, subMonitor.newChild(99));
+			} catch (OperationCanceledException e) {
+				workspace.getWorkManager().operationCanceled();
+				throw e;
+			} finally {
+				workspace.endOperation(rule, true);
+			}
+		} catch (IOException streamCloseIgnored) {
+			// ignore;
+		} finally {
+			subMonitor.done();
+		}
+	}
+	@Override
+	public void setContents(byte[] content, int updateFlags, IProgressMonitor monitor) throws CoreException {
+		String message = NLS.bind(Messages.resources_settingContents, getFullPath());
+		SubMonitor subMonitor = SubMonitor.convert(monitor, message, 100);
 		try {
 			if (workspace.shouldValidate)
 				workspace.validateSave(this);
@@ -336,6 +516,10 @@ public class File extends Resource implements IFile {
 				checkAccessible(getFlags(info));
 				workspace.beginOperation(true);
 				IFileInfo fileInfo = getStore().fetchInfo();
+				if (BitMask.isSet(updateFlags, IResource.DERIVED)) {
+					// update of derived flag during IFile.write:
+					info.set(ICoreConstants.M_DERIVED);
+				}
 				internalSetContents(content, fileInfo, updateFlags, false, subMonitor.newChild(99));
 			} catch (OperationCanceledException e) {
 				workspace.getWorkManager().operationCanceled();
@@ -345,7 +529,6 @@ public class File extends Resource implements IFile {
 			}
 		} finally {
 			subMonitor.done();
-			FileUtil.safeClose(content);
 		}
 	}
 

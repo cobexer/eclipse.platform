@@ -15,7 +15,6 @@
 package org.eclipse.compare.internal;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -64,7 +63,6 @@ import org.eclipse.core.runtime.ListenerList;
 import org.eclipse.core.runtime.MultiStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.OperationCanceledException;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.SafeRunner;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
@@ -102,7 +100,7 @@ import org.eclipse.ui.texteditor.IDocumentProvider;
  * Convenience and utility methods.
  */
 public class Utilities {
-	private static final IPath ICONS_PATH= new Path("$nl$/icons/full/"); //$NON-NLS-1$
+	private static final IPath ICONS_PATH= IPath.fromOSString("$nl$/icons/full/"); //$NON-NLS-1$
 
 	public static IWorkbenchPartSite findSite(Control c) {
 		while (c != null && !c.isDisposed()) {
@@ -149,7 +147,6 @@ public class Utilities {
 	/**
 	 * Returns the active compare filters for the compare configuration
 	 *
-	 * @param cc
 	 * @return the active compare filters
 	 */
 	public static ICompareFilter[] getCompareFilters(CompareConfiguration cc) {
@@ -244,31 +241,6 @@ public class Utilities {
 	public static IFile[] getFiles(ISelection selection) {
 		ArrayList<IResource> tmp= internalGetResources(selection, IFile.class);
 		return tmp.toArray(new IFile[tmp.size()]);
-	}
-
-	public static byte[] readBytes(InputStream in) {
-		ByteArrayOutputStream bos= new ByteArrayOutputStream();
-		try {
-			while (true) {
-				int c= in.read();
-				if (c == -1)
-					break;
-				bos.write(c);
-			}
-
-		} catch (IOException ex) {
-			return null;
-
-		} finally {
-			Utilities.close(in);
-			try {
-				bos.close();
-			} catch (IOException x) {
-				// silently ignored
-			}
-		}
-
-		return bos.toByteArray();
 	}
 
 	public static IPath getIconPath(Display display) {
@@ -637,30 +609,20 @@ public class Utilities {
 	public static String readString(InputStream is, String encoding, int length, IProgressMonitor monitor) throws IOException {
 		SubMonitor progress = SubMonitor.convert(monitor);
 		progress.setWorkRemaining(length);
-		if (is == null)
+		if (is == null) {
 			return null;
-		BufferedReader reader= null;
-		try {
+		}
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, encoding))) {
 			StringBuilder buffer= new StringBuilder();
 			char[] part= new char[2048];
 			int read= 0;
-			reader= new BufferedReader(new InputStreamReader(is, encoding));
 			while ((read= reader.read(part)) != -1) {
 				buffer.append(part, 0, read);
 				progress.worked(2048);
 				if (progress.isCanceled())
 					throw new OperationCanceledException();
 			}
-
 			return buffer.toString();
-		} finally {
-			if (reader != null) {
-				try {
-					reader.close();
-				} catch (IOException ex) {
-					// silently ignored
-				}
-			}
 		}
 	}
 
@@ -832,14 +794,10 @@ public class Utilities {
 	 * Loads content of file under <code>url</code> displaying progress on given
 	 * context.
 	 *
-	 * @param url
-	 * @param context
 	 * @return the content of file under given URL, or <code>null</code> if URL
 	 *         could not be loaded
 	 * @throws InvocationTargetException
 	 *             thrown on errors while URL loading
-	 * @throws OperationCanceledException
-	 * @throws InterruptedException
 	 */
 	public static String getURLContents(final URL url, IRunnableContext context)
 			throws InvocationTargetException, OperationCanceledException,
@@ -873,10 +831,6 @@ public class Utilities {
 	 * Applies the compare filters to the lines of text taken from the specified
 	 * contributors
 	 *
-	 * @param thisLine
-	 * @param thisContributor
-	 * @param otherLine
-	 * @param otherContributor
 	 * @param filters
 	 *            may be null
 	 * @return returns the result of applying the filters to the line from the
@@ -923,8 +877,6 @@ public class Utilities {
 	 *
 	 * @param runnable
 	 *            The {@link IRunnableWithProgress} to execute.
-	 * @throws InvocationTargetException
-	 * @throws InterruptedException
 	 */
 	public static void executeRunnable(IRunnableWithProgress runnable) throws InvocationTargetException,
 			InterruptedException {
@@ -939,8 +891,6 @@ public class Utilities {
 	 *            The {@link IRunnableWithProgress} to execute.
 	 * @param fork indicates whether to run within a separate thread.
 	 * @param cancelable indicates whether the operation shall be cancelable
-	 * @throws InvocationTargetException
-	 * @throws InterruptedException
 	 */
 	public static void executeRunnable(IRunnableWithProgress runnable, boolean fork, boolean cancelable) throws InvocationTargetException,
 			InterruptedException {

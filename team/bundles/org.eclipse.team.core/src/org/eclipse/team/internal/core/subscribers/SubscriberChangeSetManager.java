@@ -46,15 +46,15 @@ public class SubscriberChangeSetManager extends ActiveChangeSetManager {
 	private static final int RESOURCE_REMOVAL = 1;
 	private static final int RESOURCE_CHANGE = 2;
 
-	private EventHandler handler;
-	private ResourceCollector collector;
+	private final EventHandler handler;
+	private final ResourceCollector collector;
 
 	/*
 	 * Background event handler for serializing and batching change set changes
 	 */
 	private class EventHandler extends BackgroundEventHandler {
 
-		private List<Event> dispatchEvents = new ArrayList<>();
+		private final List<Event> dispatchEvents = new ArrayList<>();
 
 		protected EventHandler(String jobName, String errorTitle) {
 			super(jobName, errorTitle);
@@ -219,8 +219,7 @@ public class SubscriberChangeSetManager extends ActiveChangeSetManager {
 					}
 				}
 			}
-			for (Object element : toRemove) {
-				ActiveChangeSet set = (ActiveChangeSet) element;
+			for (ChangeSet set : toRemove) {
 				remove(set);
 			}
 		}
@@ -288,7 +287,6 @@ public class SubscriberChangeSetManager extends ActiveChangeSetManager {
 	 * from the subscriber.
 	 * @param resource the resource
 	 * @return the sync info for the resource
-	 * @throws CoreException
 	 */
 	@Override
 	public IDiff getDiff(IResource resource) throws CoreException {
@@ -336,7 +334,6 @@ public class SubscriberChangeSetManager extends ActiveChangeSetManager {
 	/**
 	 * Wait until the collector is done processing any events.
 	 * This method is for testing purposes only.
-	 * @param monitor
 	 */
 	public void waitUntilDone(IProgressMonitor monitor) {
 		monitor.worked(1);

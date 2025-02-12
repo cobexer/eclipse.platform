@@ -25,13 +25,12 @@ import org.eclipse.jface.viewers.Viewer;
 public class ResourceSetContentProvider implements ITreeContentProvider {
 	private static final Object[] EMPTY_ARRAY= new Object[0];
 	private Map<IResource, Set<IResource>> fResourceTree;
-	private IResource[] fRoots;
+	private final IResource[] fRoots;
 
 	public ResourceSetContentProvider(Set<IResource> resources) {
 		fResourceTree = new HashMap<>(1);
 		Set<IResource> roots= new HashSet<>(resources);
-		for (Object element : resources) {
-			IResource resource= (IResource)element;
+		for (IResource resource : resources) {
 			if(resource.getType() == IResource.ROOT) {
 				continue; // root cannot be displayed
 			}

@@ -43,14 +43,14 @@ public class LaunchUpdateIntroAction implements IIntroAction {
 	}
 
 	boolean executeUpdateCommand(String command) {
-		ICommandService commandService = (ICommandService) PlatformUI.getWorkbench().getService(ICommandService.class);
-		IHandlerService handlerService = (IHandlerService) PlatformUI.getWorkbench().getService(IHandlerService.class);
+		ICommandService commandService = PlatformUI.getWorkbench().getService(ICommandService.class);
+		IHandlerService handlerService = PlatformUI.getWorkbench().getService(IHandlerService.class);
 		Command cmd = commandService.getCommand(command);
 		ExecutionEvent executionEvent = handlerService.createExecutionEvent(cmd, null);
 		try {
 			cmd.executeWithChecks(executionEvent);
 		} catch (ExecutionException e) {
-			Platform.getLog(LaunchUpdateIntroAction.class).error("Exception executing command: " + command, e); //$NON-NLS-1$
+			ILog.of(LaunchUpdateIntroAction.class).error("Exception executing command: " + command, e); //$NON-NLS-1$
 		} catch (NotDefinedException e) {
 			return false;
 		} catch (NotEnabledException e) {

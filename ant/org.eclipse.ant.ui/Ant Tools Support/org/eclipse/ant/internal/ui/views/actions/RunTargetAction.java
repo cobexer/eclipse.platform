@@ -38,7 +38,7 @@ import org.eclipse.ui.texteditor.IUpdate;
  */
 public class RunTargetAction extends Action implements IUpdate {
 
-	private AntView fView;
+	private final AntView fView;
 
 	/**
 	 * Creates a new <code>RunTargetAction</code> which will execute targets in the given view.
@@ -100,17 +100,17 @@ public class RunTargetAction extends Action implements IUpdate {
 		AntElementNode selection = getSelectedElement();
 		boolean enabled = false;
 		if (selection instanceof AntTargetNode) {
-			if (!((AntTargetNode) selection).isErrorNode()) {
+			if (!selection.isErrorNode()) {
 				setToolTipText(AntViewActionMessages.RunTargetAction_4);
 				enabled = true;
 			}
 		} else if (selection instanceof AntProjectNode) {
-			if (!((AntProjectNode) selection).isErrorNode()) {
+			if (!selection.isErrorNode()) {
 				enabled = true;
 				setToolTipText(AntViewActionMessages.RunTargetAction_3);
 			}
 		} else if (selection instanceof AntTaskNode) {
-			if (!((AntTaskNode) selection).isErrorNode()) {
+			if (!selection.isErrorNode()) {
 				enabled = true;
 				setToolTipText(AntViewActionMessages.RunTargetAction_0);
 			}

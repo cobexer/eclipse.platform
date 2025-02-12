@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2017 IBM Corporation and others.
+ * Copyright (c) 2000, 2017, 2023 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -10,6 +10,7 @@
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
+ *     Nikifor Fedorov (ArSysOp) - Use equinox preferences APIs in UserStringMappings #497
  *******************************************************************************/
 
 package org.eclipse.team.internal.core;
@@ -30,9 +31,11 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.content.IContentType;
 import org.eclipse.core.runtime.content.IContentTypeManager;
+import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.team.core.IFileContentManager;
 import org.eclipse.team.core.IStringMapping;
 import org.eclipse.team.core.Team;
+import org.osgi.service.prefs.BackingStoreException;
 
 /**
  * TODO: implement extension point
@@ -73,7 +76,11 @@ public class FileContentManager implements IFileContentManager {
 		protected Map<String, Integer> loadMappingsFromPreferences() {
 			final Map<String, Integer> result= super.loadMappingsFromPreferences();
 			if (loadMappingsFromOldWorkspace(result)) {
-				TeamPlugin.getPlugin().savePluginPreferences();
+				try {
+					InstanceScope.INSTANCE.getNode(TeamPlugin.ID).flush();
+				} catch (BackingStoreException e) {
+					TeamPlugin.log(IStatus.ERROR, e.getMessage(), e);
+				}
 			}
 			return result;
 		}
@@ -85,7 +92,6 @@ public class FileContentManager implements IFileContentManager {
 		 *
 		 * @return true if the workspace was a 2.0 one and the old mappings have
 		 * been added to the map, false otherwise.
-		 *
 		 */
 		private boolean loadMappingsFromOldWorkspace(Map<String, Integer> map) {
 			// File name of the persisted file type information
@@ -134,7 +140,7 @@ public class FileContentManager implements IFileContentManager {
 	}
 
 	private final UserStringMappings fUserExtensionMappings, fUserNameMappings;
-	private PluginStringMappings fPluginExtensionMappings;//, fPluginNameMappings;
+	private final PluginStringMappings fPluginExtensionMappings;//, fPluginNameMappings;
 	private IContentType textContentType;
 
 	public FileContentManager() {

@@ -13,14 +13,35 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources;
 
-import org.eclipse.core.resources.*;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomContentsStream;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceChangeListener;
+import org.eclipse.core.resources.IResourceDelta;
+import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
 
 /**
  * Tests the public API of IResourceDelta
  */
-public class IResourceDeltaTest extends ResourceTest {
+public class IResourceDeltaTest {
+
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
+
 	/* some random resource handles */
 	protected IProject project1;
 	protected IProject project2;
@@ -37,10 +58,8 @@ public class IResourceDeltaTest extends ResourceTest {
 	 * Sets up the fixture, for example, open a network connection.
 	 * This method is called before a test is executed.
 	 */
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-
+	@Before
+	public void setUp() throws Exception {
 		// Create some resource handles
 		project1 = getWorkspace().getRoot().getProject("Project" + 1);
 		project2 = getWorkspace().getRoot().getProject("Project" + 2);
@@ -54,18 +73,15 @@ public class IResourceDeltaTest extends ResourceTest {
 		allResources = new IResource[] {project1, project2, folder1, folder2, folder3, file1, file2, file3};
 
 		// Create and open the resources
-		IWorkspaceRunnable body = monitor -> ensureExistsInWorkspace(allResources, true);
-		try {
-			getWorkspace().run(body, getMonitor());
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+		IWorkspaceRunnable body = monitor -> createInWorkspace(allResources);
+		getWorkspace().run(body, createTestMonitor());
 	}
 
 	/**
 	 * Tests the IResourceDelta#findMember method.
 	 */
-	public void testFindMember() {
+	@Test
+	public void testFindMember() throws CoreException {
 		/*
 		 * The following changes will occur:
 		 * - change file1
@@ -98,23 +114,22 @@ public class IResourceDeltaTest extends ResourceTest {
 
 			//delta with no children
 			delta = delta.findMember(file1.getProjectRelativePath());
-			assertEquals("3.1", delta, delta.findMember(Path.ROOT));
-			assertNull("3.2", delta.findMember(new Path("foo")));
+			assertEquals("3.1", delta, delta.findMember(IPath.ROOT));
+			assertNull("3.2", delta.findMember(IPath.fromOSString("foo")));
 		};
 		getWorkspace().addResourceChangeListener(listener);
 
 		//do the work
 		IWorkspaceRunnable body = monitor -> {
-			file1.setContents(getRandomContents(), true, true, getMonitor());
-			folder2.delete(true, getMonitor());
-			file4.create(getRandomContents(), true, getMonitor());
+			file1.setContents(createRandomContentsStream(), true, true, createTestMonitor());
+			folder2.delete(true, createTestMonitor());
+			file4.create(createRandomContentsStream(), true, createTestMonitor());
 		};
 		try {
-			getWorkspace().run(body, getMonitor());
-		} catch (CoreException e) {
-			fail("Exception1", e);
+			getWorkspace().run(body, createTestMonitor());
 		} finally {
 			getWorkspace().removeResourceChangeListener(listener);
 		}
 	}
+
 }

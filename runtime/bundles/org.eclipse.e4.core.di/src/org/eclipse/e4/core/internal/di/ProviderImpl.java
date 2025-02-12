@@ -13,7 +13,7 @@
  *******************************************************************************/
 package org.eclipse.e4.core.internal.di;
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 import org.eclipse.e4.core.di.IInjector;
 import org.eclipse.e4.core.di.suppliers.IObjectDescriptor;
 import org.eclipse.e4.core.di.suppliers.PrimaryObjectSupplier;

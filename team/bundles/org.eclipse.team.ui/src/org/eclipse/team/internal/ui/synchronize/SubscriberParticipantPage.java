@@ -36,7 +36,7 @@ import org.eclipse.team.ui.synchronize.SubscriberParticipant;
  */
 public final class SubscriberParticipantPage extends AbstractSynchronizePage {
 
-	private SubscriberParticipant participant;
+	private final SubscriberParticipant participant;
 
 	private final static int[] INCOMING_MODE_FILTER = new int[] {SyncInfo.CONFLICTING, SyncInfo.INCOMING};
 	private final static int[] OUTGOING_MODE_FILTER = new int[] {SyncInfo.CONFLICTING, SyncInfo.OUTGOING};
@@ -101,6 +101,8 @@ public final class SubscriberParticipantPage extends AbstractSynchronizePage {
 				modeFilter = BOTH_MODE_FILTER; break;
 			case ISynchronizePageConfiguration.CONFLICTING_MODE:
 				modeFilter = CONFLICTING_MODE_FILTER; break;
+			default:
+				throw new IllegalArgumentException(Integer.toString(mode));
 			}
 
 			collector.setFilter(

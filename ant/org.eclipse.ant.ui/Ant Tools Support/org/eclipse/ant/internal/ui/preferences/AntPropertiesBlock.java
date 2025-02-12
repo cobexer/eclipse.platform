@@ -29,7 +29,6 @@ import org.eclipse.ant.internal.ui.IAntUIConstants;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.variables.VariablesPlugin;
 import org.eclipse.jface.dialogs.IDialogSettings;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -80,7 +79,7 @@ public class AntPropertiesBlock {
 	 */
 	private static final String PROPERTY_SORT_DIRECTION = "ant.properties.block.property.sortDirection"; //$NON-NLS-1$
 
-	private IAntBlockContainer container;
+	private final IAntBlockContainer container;
 
 	private Button editButton;
 	private Button removeButton;
@@ -110,7 +109,7 @@ public class AntPropertiesBlock {
 	/**
 	 * Button listener that delegates for widget selection events.
 	 */
-	private SelectionAdapter buttonListener = new SelectionAdapter() {
+	private final SelectionAdapter buttonListener = new SelectionAdapter() {
 		@Override
 		public void widgetSelected(SelectionEvent event) {
 			if (event.widget == addButton) {
@@ -132,7 +131,7 @@ public class AntPropertiesBlock {
 	/**
 	 * Key listener that delegates for key pressed events.
 	 */
-	private KeyAdapter keyListener = new KeyAdapter() {
+	private final KeyAdapter keyListener = new KeyAdapter() {
 		@Override
 		public void keyPressed(KeyEvent event) {
 			if (event.getSource() == propertyTableViewer) {
@@ -150,7 +149,7 @@ public class AntPropertiesBlock {
 	/**
 	 * Selection changed listener that delegates selection events.
 	 */
-	private ISelectionChangedListener tableListener = event -> {
+	private final ISelectionChangedListener tableListener = event -> {
 		if (tablesEnabled) {
 			if (event.getSource() == propertyTableViewer) {
 				propertyTableSelectionChanged((IStructuredSelection) event.getSelection());
@@ -419,7 +418,7 @@ public class AntPropertiesBlock {
 		if (result == null) {
 			return;
 		}
-		IPath filterPath = new Path(dialog.getFilterPath());
+		IPath filterPath = IPath.fromOSString(dialog.getFilterPath());
 		for (String fileName : dialog.getFileNames()) {
 			IPath path = filterPath.append(fileName).makeAbsolute();
 			((AntContentProvider) fileTableViewer.getContentProvider()).add(path.toOSString());

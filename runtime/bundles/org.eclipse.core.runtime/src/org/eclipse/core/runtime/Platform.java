@@ -19,8 +19,15 @@ package org.eclipse.core.runtime;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.Charset;
-import java.util.*;
-import org.eclipse.core.internal.runtime.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.MissingResourceException;
+import java.util.ResourceBundle;
+import org.eclipse.core.internal.runtime.AuthorizationHandler;
+import org.eclipse.core.internal.runtime.InternalPlatform;
+import org.eclipse.core.internal.runtime.Messages;
+import org.eclipse.core.internal.runtime.MetaDataKeeper;
+import org.eclipse.core.internal.runtime.PlatformActivator;
 import org.eclipse.core.runtime.content.IContentTypeManager;
 import org.eclipse.core.runtime.preferences.IPreferencesService;
 import org.eclipse.equinox.app.IApplicationContext;
@@ -52,6 +59,52 @@ import org.osgi.framework.FrameworkUtil;
 public final class Platform {
 
 	/**
+	 * Convenience class to query for the current OS.
+	 *
+	 * @since 3.30
+	 */
+	public static final class OS {
+		private OS() {
+			// avoid instantiation
+		}
+
+		/**
+		 * @param osString the identifier for the OS (use one of the constants that
+		 *                 start with <code>OS_</code> in the <code>Platform</code>
+		 *                 class).
+		 *
+		 * @return <code>true</code> if the current platform is the one specified as a
+		 *         parameter, <code>false</code> in all other cases.
+		 * @see Platform#getOS()
+		 * @since 3.30
+		 */
+		public static boolean is(String osString) {
+			return Platform.getOS().equals(osString);
+		}
+
+		/**
+		 * @return <code>true</code> if the current OS is Windows
+		 */
+		public static boolean isWindows() {
+			return is(OS_WIN32);
+		}
+
+		/**
+		 * @return <code>true</code> if the current OS is Linux
+		 */
+		public static boolean isLinux() {
+			return is(OS_LINUX);
+		}
+
+		/**
+		 * @return <code>true</code> if the current OS is MacOSX
+		 */
+		public static boolean isMac() {
+			return is(OS_MACOSX);
+		}
+
+	}
+	/**
 	 * The unique identifier constant (value "<code>org.eclipse.core.runtime</code>")
 	 * of the Core Runtime (pseudo-) plug-in.
 	 */
@@ -63,7 +116,6 @@ public final class Platform {
 	 * the existence of runnable applications. A plug-in may define any
 	 * number of applications; however, the platform is only capable
 	 * of running one application at a time.
-	 *
 	 */
 	public static final String PT_APPLICATIONS = "applications"; //$NON-NLS-1$
 
@@ -186,29 +238,31 @@ public final class Platform {
 	public static final int FAILED_DELETE_METADATA = 6;
 
 	/**
-	 * Constant string (value "win32") indicating the platform is running on a
+	 * Constant string (value {@code win32}) indicating the platform is running on a
 	 * Window 32-bit operating system (e.g., Windows 98, NT, 2000).
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String OS_WIN32 = "win32";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "linux") indicating the platform is running on a
+	 * Constant string (value {@code linux} indicating the platform is running on a
 	 * Linux-based operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String OS_LINUX = "linux";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "aix") indicating the platform is running on an
+	 * Constant string (value {@code aix} indicating the platform is running on an
 	 * AIX-based operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
@@ -218,87 +272,95 @@ public final class Platform {
 	 * @since 3.0
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String OS_AIX = "aix";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "solaris") indicating the platform is running on a
-	 * Solaris-based operating system.
+	 * Constant string (value {@code solaris}) indicating the platform is running on
+	 * a Solaris-based operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String OS_SOLARIS = "solaris";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "hpux") indicating the platform is running on an
+	 * Constant string (value {@code hpux}) indicating the platform is running on an
 	 * HP/UX-based operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String OS_HPUX = "hpux";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "qnx") indicating the platform is running on a
+	 * Constant string (value {@code qnx}) indicating the platform is running on a
 	 * QNX-based operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String OS_QNX = "qnx";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "macosx") indicating the platform is running on a
-	 * Mac OS X operating system.
+	 * Constant string (value {@code macosx}) indicating the platform is running on
+	 * a Mac OS X operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String OS_MACOSX = "macosx";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "unknown") indicating the platform is running on a
-	 * machine running an unknown operating system.
+	 * Constant string (value {@code unknown}) indicating the platform is running on
+	 * a machine running an unknown operating system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String OS_UNKNOWN = "unknown";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "x86") indicating the platform is running on an
+	 * Constant string (value {@code x86}) indicating the platform is running on an
 	 * x86-based architecture.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
+	 * @deprecated not supported anymore
 	 */
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String ARCH_X86 = "x86";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "PA_RISC") indicating the platform is running on an
-	 * PA_RISC-based architecture.
+	 * Constant string (value {@code PA_RISC}) indicating the platform is running on
+	 * an PA_RISC-based architecture.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
@@ -308,11 +370,11 @@ public final class Platform {
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String ARCH_PA_RISC = "PA_RISC";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "ppc") indicating the platform is running on an
+	 * Constant string (value {@code ppc}) indicating the platform is running on an
 	 * PowerPC-based architecture.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
@@ -323,12 +385,12 @@ public final class Platform {
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String ARCH_PPC = "ppc";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "sparc") indicating the platform is running on an
-	 * Sparc-based architecture.
+	 * Constant string (value {@code sparc}) indicating the platform is running on
+	 * an Sparc-based architecture.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
@@ -338,50 +400,67 @@ public final class Platform {
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String ARCH_SPARC = "sparc";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "x86_64") indicating the platform is running on an
-	 * x86 64bit-based architecture.
+	 * Constant string (value {@code x86_64}) indicating the platform is running on
+	 * an x86 64bit-based architecture.
 	 *
 	 * @since 3.1
 	 */
 	public static final String ARCH_X86_64 = "x86_64";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "aarch64") indicating the platform is running on an
-	 * AARCH64bit-based architecture.
+	 * Constant string (value {@code aarch64}) indicating the platform is running on
+	 * an AARCH64bit-based architecture.
 	 *
 	 * @since 3.22
 	 */
 	public static final String ARCH_AARCH64 = "aarch64";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "amd64") indicating the platform is running on an
-	 * AMD64-based architecture.
+	 * Constant string (value {@code ppc64le}) indicating the platform is running on
+	 * an little-endian PowerPC 64bit based architecture.
+	 *
+	 * @since 3.32
+	 */
+	public static final String ARCH_PPC64LE = "ppc64le"; //$NON-NLS-1$
+
+	/**
+	 * Constant string (value {@code riscv64} indicating the platform is running on
+	 * an RISC-V 64bit-based architecture.
+	 *
+	 * @since 3.32
+	 *
+	 */
+	public static final String ARCH_RISCV64 = "riscv64";//$NON-NLS-1$
+
+	/**
+	 * Constant string (value {@code amd64}) indicating the platform is running on
+	 * an AMD64-based architecture.
 	 *
 	 * @since 3.0
-	 * @deprecated use <code>ARCH_X86_64</code> instead. Note the values
-	 * has been changed to be the value of the <code>ARCH_X86_64</code> constant.
+	 * @deprecated use <code>ARCH_X86_64</code> instead. Note the values has been
+	 *             changed to be the value of the <code>ARCH_X86_64</code> constant.
 	 */
 	@Deprecated
 	public static final String ARCH_AMD64 = ARCH_X86_64;
 
 	/**
-	 * Constant string (value "ia64") indicating the platform is running on an
+	 * Constant string (value {@code ia64}) indicating the platform is running on an
 	 * IA64-based architecture.
 	 *
 	 * @since 3.0
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String ARCH_IA64 = "ia64"; //$NON-NLS-1$
 
 	/**
-	 * Constant string (value "ia64_32") indicating the platform is running on an
-	 * IA64 32bit-based architecture.
+	 * Constant string (value {@code ia64_32}) indicating the platform is running on
+	 * an IA64 32bit-based architecture.
 	 *
 	 * @since 3.1
 	 *
@@ -391,57 +470,61 @@ public final class Platform {
 	public static final String ARCH_IA64_32 = "ia64_32";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "win32") indicating the platform is running on a
+	 * Constant string (value {@code win32}) indicating the platform is running on a
 	 * machine using the Windows windowing system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String WS_WIN32 = "win32";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "motif") indicating the platform is running on a
+	 * Constant string (value {@code motif}) indicating the platform is running on a
 	 * machine using the Motif windowing system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 *
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String WS_MOTIF = "motif";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "gtk") indicating the platform is running on a
+	 * Constant string (value {@code gtk}) indicating the platform is running on a
 	 * machine using the GTK windowing system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String WS_GTK = "gtk";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "photon") indicating the platform is running on a
-	 * machine using the Photon windowing system.
+	 * Constant string (value {@code photon}) indicating the platform is running on
+	 * a machine using the Photon windowing system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 * @deprecated not supported anymore
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String WS_PHOTON = "photon";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "carbon") indicating the platform is running on a
-	 * machine using the Carbon windowing system (Mac OS X).
+	 * Constant string (value {@code carbon}) indicating the platform is running on
+	 * a machine using the Carbon windowing system (Mac OS X).
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
@@ -451,30 +534,35 @@ public final class Platform {
 	 *
 	 * @since 3.0
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String WS_CARBON = "carbon";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "cocoa") indicating the platform is running on a
+	 * Constant string (value {@code cocoa}) indicating the platform is running on a
 	 * machine using the Cocoa windowing system (Mac OS X).
+	 *
 	 * @since 3.5
 	 */
 	public static final String WS_COCOA = "cocoa";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "wpf") indicating the platform is running on a
+	 * Constant string (value {@code wpf}) indicating the platform is running on a
 	 * machine using the WPF windowing system.
+	 *
 	 * @since 3.3
+	 * @deprecated not supported anymore
 	 */
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static final String WS_WPF = "wpf";//$NON-NLS-1$
 
 	/**
-	 * Constant string (value "unknown") indicating the platform is running on a
-	 * machine running an unknown windowing system.
+	 * Constant string (value {@code unknown}) indicating the platform is running on
+	 * a machine running an unknown windowing system.
 	 * <p>
 	 * Note this constant has been moved from the deprecated
 	 * org.eclipse.core.boot.BootLoader class and its value has not changed.
 	 * </p>
+	 *
 	 * @since 3.0
 	 */
 	public static final String WS_UNKNOWN = "unknown";//$NON-NLS-1$
@@ -557,7 +645,7 @@ public final class Platform {
 	 * for data access and modifications.
 	 * This API will be deleted in a future release. See bug 370248 for details.
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2024-03")
 	public static void addProtectionSpace(URL resourceUrl, String realm) throws CoreException {
 		AuthorizationHandler.addProtectionSpace(resourceUrl, realm);
 	}
@@ -583,7 +671,7 @@ public final class Platform {
 	 * @see Bundle#getEntry(String)
 	 * @deprecated use {@link FileLocator#toFileURL(URL)} instead
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static URL asLocalURL(URL url) throws IOException {
 		return FileLocator.toFileURL(url);
 	}
@@ -592,7 +680,7 @@ public final class Platform {
 	 * Takes down the splash screen if one was put up.
 	 * @deprecated use {@link IApplicationContext#applicationRunning()} instead
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static void endSplash() {
 		InternalPlatform.getDefault().endSplash();
 	}
@@ -721,9 +809,8 @@ public final class Platform {
 	/**
 	 * As the org.eclipse.core.runtime.compatibility plug-in has been removed in
 	 * Eclipse 4.6 this method is not supported anymore.
-	 *
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static Plugin getPlugin(String id) {
 		return null;
 	}
@@ -764,7 +851,7 @@ public final class Platform {
 	 * @see Bundle#getEntry(String)
 	 * @deprecated use {@link FileLocator#resolve(URL)} instead
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static URL resolve(URL url) throws IOException {
 		return FileLocator.resolve(url);
 	}
@@ -777,7 +864,7 @@ public final class Platform {
 	 * @param runnable the runnable to run
 	 * @deprecated clients should use <code>SafeRunner#run</code> instead
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static void run(ISafeRunnable runnable) {
 		SafeRunner.run(runnable);
 	}
@@ -810,7 +897,7 @@ public final class Platform {
 	 * @since 3.0
 	 * @deprecated use {@link FileLocator#find(Bundle, IPath)}
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static URL find(Bundle bundle, IPath path) {
 		return FileLocator.find(bundle, path);
 	}
@@ -872,7 +959,7 @@ public final class Platform {
 	 * @since 3.0
 	 * @deprecated use {@link FileLocator#find(Bundle, IPath, Map)} instead
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true, since = "2025-03")
 	public static URL find(Bundle bundle, IPath path, Map<String,String> override) {
 		return FileLocator.find(bundle, path, override);
 	}
@@ -922,7 +1009,7 @@ public final class Platform {
 	 * @since 3.0
 	 */
 	public static ILog getLog(Bundle bundle) {
-		return InternalPlatform.getDefault().getLog(bundle);
+		return ILog.of(bundle);
 	}
 
 	/**
@@ -935,8 +1022,7 @@ public final class Platform {
 	 * @since 3.16
 	 */
 	public static ILog getLog(Class<?> clazz) {
-		Bundle bundle = FrameworkUtil.getBundle(clazz);
-		return InternalPlatform.getDefault().getLog(bundle);
+		return ILog.of(clazz);
 	}
 
 	/**
@@ -1116,20 +1202,24 @@ public final class Platform {
 	/**
 	 * Returns the platform administrator for this running Eclipse.
 	 * <p>
-	 * Note: This is an internal method and <em>must not</em>
-	 * be used by clients which are not part of the Eclipse Platform.
-	 * This method allows access to classes which are not Eclipse
-	 * Platform API but are part of the OSGi runtime that the Eclipse
-	 * Platform is built on. Even as the Eclipse Platform evolves
-	 * in compatible ways from release to release, the details of
-	 * the OSGi implementation might not.
-	 * </p><p>
-	 * Clients can also acquire the {@link PlatformAdmin} service
-	 * to retrieve this object.
+	 * Note: This is an internal method and <em>must not</em> be used by clients
+	 * which are not part of the Eclipse Platform. This method allows access to
+	 * classes which are not Eclipse Platform API but are part of the OSGi runtime
+	 * that the Eclipse Platform is built on. Even as the Eclipse Platform evolves
+	 * in compatible ways from release to release, the details of the OSGi
+	 * implementation might not.
 	 * </p>
+	 * <p>
+	 * Clients can also acquire the {@link PlatformAdmin} service to retrieve this
+	 * object.
+	 * </p>
+	 *
 	 * @return the platform admin for this instance of Eclipse
+	 * @deprecated only consumer is PDE and this should never be used by other
+	 *             clients, see javadoc for details.
 	 * @since 3.0
 	 */
+	@Deprecated(forRemoval = true, since = "2024-03") // 2024-03 was added later for information purposes
 	public static PlatformAdmin getPlatformAdmin() {
 		return InternalPlatform.getDefault().getPlatformAdmin();
 	}

@@ -27,7 +27,7 @@ import org.eclipse.core.runtime.SafeRunner;
  */
 public abstract class ChangeSetManager {
 
-	private ListenerList<IChangeSetChangeListener> listeners = new ListenerList<>(ListenerList.IDENTITY);
+	private final ListenerList<IChangeSetChangeListener> listeners = new ListenerList<>(ListenerList.IDENTITY);
 	private Set<ChangeSet> sets;
 	private boolean initializing;
 
@@ -201,8 +201,6 @@ public abstract class ChangeSetManager {
 
 	/**
 	 * Fire resource change notifications to the listeners.
-	 * @param changeSet
-	 * @param allAffectedResources
 	 */
 	protected void fireResourcesChangedEvent(final ChangeSet changeSet, final IPath[] allAffectedResources) {
 		if (initializing)

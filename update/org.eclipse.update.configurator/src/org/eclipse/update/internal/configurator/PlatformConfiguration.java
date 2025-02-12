@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2017 IBM Corporation and others.
+ * Copyright (c) 2000, 2023 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -39,7 +39,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.FileLocator;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.osgi.service.datalocation.Location;
 import org.eclipse.osgi.util.NLS;
 import org.eclipse.update.configurator.IPlatformConfiguration;
@@ -61,8 +61,6 @@ import org.w3c.dom.Element;
 public class PlatformConfiguration implements IPlatformConfiguration, IConfigurationConstants {
 
 	private static PlatformConfiguration currentPlatformConfiguration = null;
-	//private static final DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
-	//	private static final TransformerFactory transformerFactory = TransformerFactory.newInstance();
 	private static final String XML_ENCODING = "UTF-8"; //$NON-NLS-1$
 
 	private Configuration config;
@@ -124,7 +122,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 		// Retrieve install location with respect to given url if possible
 		try {
 			if (url != null && url.getProtocol().equals("file") && url.getPath().endsWith("configuration/org.eclipse.update/platform.xml")) {
-				installLocation = new Path(url.getPath()).removeLastSegments(3).toFile().toURL();
+				installLocation = IPath.fromOSString(url.getPath()).removeLastSegments(3).toFile().toURL();
 			}
 		} catch (Exception e) {
 			//
@@ -233,7 +231,6 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 	 *
 	 * @param url site url
 	 * @param checkPlatformURL if true, check for url format that is platform:/...
-	 * @return
 	 */
 	public SiteEntry findConfiguredSite(URL url, boolean checkPlatformURL) {
 		if (url == null)
@@ -414,7 +411,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 	public Set<String> getPluginPaths() {
 
 		HashSet<String> paths = new HashSet<>();
-	
+
 		for (ISiteEntry site : getConfiguredSites()) {
 			for (String plugin : site.getPlugins()) {
 				paths.add(plugin);
@@ -432,12 +429,12 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 		Utils.debug("computed plug-ins:"); //$NON-NLS-1$
 
 		ISiteEntry[] sites = getConfiguredSites();
-		for (int i = 0; i < sites.length; i++) {
-			if (!(sites[i] instanceof SiteEntry)) {
-				Utils.debug("Site " + sites[i].getURL() + " is not a SiteEntry"); //$NON-NLS-1$ //$NON-NLS-2$
+		for (ISiteEntry site : sites) {
+			if (!(site instanceof SiteEntry)) {
+				Utils.debug("Site " + site.getURL() + " is not a SiteEntry"); //$NON-NLS-1$ //$NON-NLS-2$
 				continue;
 			}
-			for (PluginEntry plugin : ((SiteEntry) sites[i]).getPluginEntries()) {
+			for (PluginEntry plugin : ((SiteEntry) site).getPluginEntries()) {
 				allPlugins.add(plugin);
 				Utils.debug("   " + plugin.getURL()); //$NON-NLS-1$
 			}
@@ -497,7 +494,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 			// not a file protocol - attempt to save to the URL
 			URLConnection uc = url.openConnection();
 			uc.setDoOutput(true);
-			
+
 			try(OutputStream os = uc.getOutputStream()) {
 				saveAsXML(os);
 				config.setDirty(false);
@@ -598,9 +595,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 	/**
 	 * Starts a platform installed at specified installURL using configuration located at platformConfigLocation.
 	 */
-	public static synchronized void startup(URL installURL, Location platformConfigLocation) throws Exception {
-		PlatformConfiguration.installURL = installURL;
-
+	public static synchronized void startup(Location platformConfigLocation) throws Exception {
 		// create current configuration
 		if (currentPlatformConfiguration == null) {
 			currentPlatformConfiguration = new PlatformConfiguration(platformConfigLocation);
@@ -648,7 +643,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 
 			// try loading the configuration
 			try {
-				config = loadConfig(configFileURL, installURL);
+				config = loadConfig(configFileURL, getInstallURL());
 				Utils.debug("Using configuration " + configFileURL.toString()); //$NON-NLS-1$
 			} catch (Exception e) {
 				// failed to load, see if we can find pre-initialized configuration.
@@ -658,7 +653,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 						throw new IOException(); // no platform.xml found, need to create default site
 
 					URL sharedConfigFileURL = new URL(parentLocation.getURL(), CONFIG_NAME);
-					config = loadConfig(sharedConfigFileURL, installURL);
+					config = loadConfig(sharedConfigFileURL, getInstallURL());
 
 					// pre-initialized config loaded OK ... copy any remaining update metadata
 					// Only copy if the default config location is not the install location
@@ -670,7 +665,7 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 					return;
 				} catch (Exception ioe) {
 					Utils.debug("Creating default configuration from " + configFileURL.toExternalForm()); //$NON-NLS-1$
-					createDefaultConfiguration(configFileURL, installURL);
+					createDefaultConfiguration(configFileURL, getInstallURL());
 				}
 			} finally {
 				// if config == null an unhandled exception has been thrown and we allow it to propagate
@@ -807,7 +802,9 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 			Properties props = new Properties();
 			String externalForm = Utils.makeRelative(config.getInstallURL(), sharedConfigLocation.getURL()).toExternalForm();
 			props.put("osgi.sharedConfiguration.area", externalForm); //$NON-NLS-1$
-			props.store(new FileOutputStream(configIni), "Linked configuration"); //$NON-NLS-1$
+			try (FileOutputStream out = new FileOutputStream(configIni)) {
+				props.store(out, "Linked configuration"); //$NON-NLS-1$
+			}
 
 			config = new Configuration(new Date());
 			config.setURL(new URL(newConfigLocation.getURL(), CONFIG_NAME));
@@ -952,15 +949,18 @@ public class PlatformConfiguration implements IPlatformConfiguration, IConfigura
 	}
 
 	public static URL getInstallURL() {
+		if (installURL == null) {
+			installURL = Utils.getInstallURL();
+		}
 		return installURL;
 	}
 
 	private void saveAsXML(OutputStream stream) throws CoreException, IOException {
 		BufferedWriter xmlWriter = new BufferedWriter(new OutputStreamWriter(stream, XML_ENCODING));
 		try {
-			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+			@SuppressWarnings("restriction")
+			DocumentBuilderFactory factory = org.eclipse.core.internal.runtime.XmlProcessorFactory.createDocumentBuilderFactoryWithErrorOnDOCTYPE();
 			factory.setExpandEntityReferences(false);
-			factory.setValidating(false);
 			factory.setIgnoringComments(true);
 			DocumentBuilder docBuilder = factory.newDocumentBuilder();
 			Document doc = docBuilder.newDocument();

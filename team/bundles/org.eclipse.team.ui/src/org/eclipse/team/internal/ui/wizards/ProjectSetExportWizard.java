@@ -19,19 +19,20 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.ParserConfigurationException;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.core.runtime.SubMonitor;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -82,7 +83,7 @@ public class ProjectSetExportWizard extends Wizard implements IExportWizard {
 				@Override
 				public void run(IProgressMonitor monitor) throws InvocationTargetException {
 					String filename = locationPage.getFileName();
-					Path path = new Path(filename);
+					IPath path = IPath.fromOSString(filename);
 					if (path.getFileExtension() == null) {
 						filename = filename + ".psf"; //$NON-NLS-1$
 					}
@@ -133,12 +134,11 @@ public class ProjectSetExportWizard extends Wizard implements IExportWizard {
 
 					UIProjectSetSerializationContext context = new UIProjectSetSerializationContext(getShell(), filename);
 
-					BufferedWriter writer = null;
-					try {
+					try (BufferedWriter writer = new BufferedWriter(
+							new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
 						// if file was written to the workspace, perform the validateEdit
 						if (!locationPage.isSaveToFileSystem())
 							locationPage.validateEditWorkspaceFile(getShell());
-						writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file), "UTF-8")); //$NON-NLS-1$
 
 						//
 						XMLMemento xmlMemento = getXMLMementoRoot();
@@ -173,14 +173,6 @@ public class ProjectSetExportWizard extends Wizard implements IExportWizard {
 						throw new InvocationTargetException(e);
 					} catch (TeamException e) {
 						throw new InvocationTargetException(e);
-					} finally {
-						if (writer != null) {
-							try {
-								writer.close();
-							} catch (IOException e) {
-								throw new InvocationTargetException(e);
-							}
-						}
 					}
 
 					// if file was written to the workspace, refresh it
@@ -208,8 +200,9 @@ public class ProjectSetExportWizard extends Wizard implements IExportWizard {
 				private XMLMemento getXMLMementoRoot() {
 					Document document;
 					try {
-						document = DocumentBuilderFactory.newInstance()
-								.newDocumentBuilder().newDocument();
+						@SuppressWarnings("restriction")
+						DocumentBuilder b = org.eclipse.core.internal.runtime.XmlProcessorFactory.createDocumentBuilderWithErrorOnDOCTYPE();
+						document = b.newDocument();
 						Element element = document.createElement("psf"); //$NON-NLS-1$
 						element.setAttribute("version", "2.0"); //$NON-NLS-1$ //$NON-NLS-2$
 						document.appendChild(element);

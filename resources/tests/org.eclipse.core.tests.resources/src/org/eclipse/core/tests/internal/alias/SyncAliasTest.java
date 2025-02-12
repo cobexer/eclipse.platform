@@ -14,20 +14,38 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.alias;
 
-import java.io.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.tests.resources.ResourceTest;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IWorkspaceRunnable;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests out of sync cases and refreshLocal in the presence of duplicate
  * resources.
  */
-public class SyncAliasTest extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class SyncAliasTest {
+
 	/**
 	 * Tests synchronization in presence of nested projects.
 	 * See bug 244315 for details.
 	 */
+	@Test
 	public void testNestedProjects() throws CoreException {
 		final IWorkspaceRoot root = getWorkspace().getRoot();
 		File fsRoot = root.getLocation().toFile();
@@ -47,7 +65,7 @@ public class SyncAliasTest extends ResourceTest {
 
 			//create project physically nested in top level project
 			IProjectDescription description = getWorkspace().newProjectDescription("nestedProject");
-			description.setLocation(new Path(childProject.getAbsolutePath()));
+			description.setLocation(IPath.fromOSString(childProject.getAbsolutePath()));
 			nestedProject.create(description, monitor);
 			nestedProject.open(monitor);
 
@@ -71,4 +89,5 @@ public class SyncAliasTest extends ResourceTest {
 			nestedTarget.refreshLocal(IResource.DEPTH_INFINITE, monitor);
 		}, new NullProgressMonitor());
 	}
+
 }

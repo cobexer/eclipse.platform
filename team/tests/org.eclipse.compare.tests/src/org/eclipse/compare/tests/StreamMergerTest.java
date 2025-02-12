@@ -13,17 +13,21 @@
  *******************************************************************************/
 package org.eclipse.compare.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 import org.eclipse.compare.IStreamMerger;
 import org.eclipse.compare.internal.merge.TextStreamMerger;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
+// Tested class is deprecated
+@Deprecated
 public class StreamMergerTest {
 
 	private static final String ABC = "abc"; //$NON-NLS-1$

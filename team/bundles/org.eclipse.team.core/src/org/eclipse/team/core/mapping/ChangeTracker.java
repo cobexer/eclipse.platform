@@ -42,9 +42,9 @@ import org.eclipse.team.internal.core.TeamPlugin;
  */
 public abstract class ChangeTracker {
 
-	private Map<IProject, IChangeGroupingRequestor> trackedProjects = new HashMap<>(); // Map IProject->IChangeGroupingRequestor
+	private final Map<IProject, IChangeGroupingRequestor> trackedProjects = new HashMap<>(); // Map IProject->IChangeGroupingRequestor
 	private boolean disposed;
-	private ChangeListener changeListener = new ChangeListener();
+	private final ChangeListener changeListener = new ChangeListener();
 
 	private class ChangeListener implements IResourceChangeListener, IRepositoryProviderListener {
 		/**
@@ -135,7 +135,7 @@ public abstract class ChangeTracker {
 		final List<IResource> result = new ArrayList<>();
 		try {
 			projectDelta.accept(delta -> {
-				if (isResourceOfInterest(delta.getResource()) & isChangeOfInterest(delta)) {
+				if (isResourceOfInterest(delta.getResource()) && isChangeOfInterest(delta)) {
 					result.add(delta.getResource());
 				}
 				return true;

@@ -15,12 +15,19 @@
  *******************************************************************************/
 package org.eclipse.core.internal.watson;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.eclipse.core.internal.dtree.*;
+import org.eclipse.core.internal.dtree.AbstractDataTreeNode;
+import org.eclipse.core.internal.dtree.DataTreeLookup;
+import org.eclipse.core.internal.dtree.DataTreeNode;
+import org.eclipse.core.internal.dtree.DeltaDataTree;
+import org.eclipse.core.internal.dtree.ObjectNotFoundException;
 import org.eclipse.core.internal.utils.Messages;
 import org.eclipse.core.internal.utils.StringPool;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.osgi.util.NLS;
 
 /**
@@ -378,15 +385,20 @@ public class ElementTree {
 	 * Returns the element data for the given element identifier.
 	 * The given element must be present in this tree.
 	 */
-	public synchronized Object getElementData(IPath key) {
+	public Object getElementData(IPath key) {
 		/* don't allow modification of the implicit root */
-		if (key.isRoot())
+		if (key.isRoot()) {
 			return null;
-		DataTreeLookup lookup = lookupCache; // Grab it in case it's replaced concurrently.
-		if (lookup == null || lookup.key != key)
-			lookupCache = lookup = tree.lookup(key);
-		if (lookup.isPresent)
-			return lookup.data;
+		}
+		synchronized (this) {
+			DataTreeLookup lookup = lookupCache; // Grab it in case it's replaced concurrently.
+			if (lookup == null || lookup.key != key) {
+				lookupCache = lookup = tree.lookup(key);
+			}
+			if (lookup.isPresent) {
+				return lookup.data;
+			}
+		}
 		throw createElementNotFoundException(key);
 	}
 
@@ -538,10 +550,12 @@ public class ElementTree {
 	 * Returns true if this element tree includes an element with the given
 	 * key, false otherwise.
 	 */
-	public synchronized boolean includes(IPath key) {
+	public boolean includes(IPath key) {
 		DataTreeLookup lookup = lookupCache; // Grab it in case it's replaced concurrently.
 		if (lookup == null || lookup.key != key) {
-			lookupCache = lookup = tree.lookup(key);
+			synchronized (this) {
+				lookupCache = lookup = tree.lookup(key);
+			}
 		}
 		return lookup.isPresent;
 	}
@@ -596,7 +610,7 @@ public class ElementTree {
 			while (toMerge != null) {
 				if (path.isRoot()) {
 					//copy all the children
-					IPath[] children = toMerge.getChildren(Path.ROOT);
+					IPath[] children = toMerge.getChildren(IPath.ROOT);
 					for (IPath element : children) {
 						current.createSubtree(element, toMerge.getSubtree(element));
 					}
@@ -628,6 +642,8 @@ public class ElementTree {
 	public synchronized ElementTree newEmptyDelta() {
 		// Don't want old trees hanging onto cached infos.
 		lookupCache = lookupCacheIgnoreCase = null;
+		// reclaim memory of childIDsCache - which is only used on the current tree:
+		childIDsCache = null;
 		if (!this.isImmutable()) {
 			this.immutable();
 		}
@@ -721,7 +737,7 @@ public class ElementTree {
 			buffer.append(elementID.requestPath() + " " + elementContents + "\n"); //$NON-NLS-1$ //$NON-NLS-2$
 			return true;
 		};
-		new ElementTreeIterator(this, Path.ROOT).iterate(visitor);
+		new ElementTreeIterator(this, IPath.ROOT).iterate(visitor);
 		return buffer.toString();
 	}
 

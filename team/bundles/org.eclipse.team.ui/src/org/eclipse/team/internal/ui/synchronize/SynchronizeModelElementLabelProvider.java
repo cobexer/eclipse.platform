@@ -14,7 +14,6 @@
 package org.eclipse.team.internal.ui.synchronize;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
 import org.eclipse.compare.CompareConfiguration;
@@ -57,7 +56,7 @@ public class SynchronizeModelElementLabelProvider extends LabelProvider implemen
 
 	// Used as the base label provider for retreiving image and text from
 	// the workbench adapter.
-	private WorkbenchLabelProvider workbenchLabelProvider = new WorkbenchLabelProvider();
+	private final WorkbenchLabelProvider workbenchLabelProvider = new WorkbenchLabelProvider();
 
 	// Font used to display busy elements
 	private Font busyFont;
@@ -136,6 +135,8 @@ public class SynchronizeModelElementLabelProvider extends LabelProvider implemen
 				break;
 			case SyncInfo.INCOMING :
 				kind = (kind & ~SyncInfo.INCOMING) | SyncInfo.OUTGOING;
+				break;
+			default:
 				break;
 		}
 		return compareConfig.getImage(base, kind);
@@ -216,9 +217,7 @@ public class SynchronizeModelElementLabelProvider extends LabelProvider implemen
 		}
 		compareConfig.dispose();
 		if (fgImageCache != null) {
-			Iterator it = fgImageCache.values().iterator();
-			while (it.hasNext()) {
-				Image element = (Image) it.next();
+			for (Image element : fgImageCache.values()) {
 				element.dispose();
 			}
 		}

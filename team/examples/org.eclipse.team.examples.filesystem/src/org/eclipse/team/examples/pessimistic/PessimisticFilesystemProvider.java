@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2021 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -39,8 +39,8 @@ import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.resources.team.FileModificationValidator;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.Path;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.team.core.RepositoryProvider;
 
@@ -65,7 +65,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 	/**
 	 * The file modification validator for this provider.
 	 */
-	private FileModificationValidator validator;
+	private final FileModificationValidator validator;
 	/**
 	 * The cache of resources that are currently controlled.
 	 * The cache is a map of parent resource -&amp; set of controlled children.
@@ -107,8 +107,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 			Map<IContainer, Set<IResource>> byParent = sortByParent(toAdd);
 
 			monitor1.beginTask("Adding to control", 1000);
-			for (Object element : byParent.keySet()) {
-				IContainer parent= (IContainer) element;
+			for (IContainer parent : byParent.keySet()) {
 				Set<IResource> controlledResources = fControlledResources.get(parent);
 				if (controlledResources == null) {
 					controlledResources = new HashSet<>(1);
@@ -150,8 +149,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 			Map<IContainer, Set<IResource>> byParent = sortByParent(toRemove);
 
 			monitor1.beginTask("Removing from control", 1000);
-			for (Object element : byParent.keySet()) {
-				IContainer parent= (IContainer) element;
+			for (IContainer parent : byParent.keySet()) {
 				Set<IResource> controlledResources = fControlledResources.get(parent);
 				if (controlledResources == null) {
 					deleteControlFile(parent, monitor1);
@@ -222,7 +220,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 			}
 			child.delete(true, monitor);
 		}
-		IFile controlFile= container.getFile(new Path(CONTROL_FILE_NAME));
+		IFile controlFile= container.getFile(IPath.fromOSString(CONTROL_FILE_NAME));
 		monitor.beginTask("Creating control file " + controlFile, 2);
 		controlFile.create(new ByteArrayInputStream(new byte[0]), true, monitor);
 		controlFile.setDerived(true);
@@ -238,14 +236,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 	Set<IResource> readControlFile(IFile controlFile) {
 		Set<IResource> controlledResources = new HashSet<>(1);
 		if (controlFile.exists()) {
-			InputStream in= null;
-			try {
-				try {
-					in= controlFile.getContents(true);
-				} catch (CoreException e) {
-					PessimisticFilesystemProviderPlugin.getInstance().logError(e, "Could not open stream on control file: " + controlFile);
-				}
-				DataInputStream dIn= new DataInputStream(in);
+			try (InputStream in = controlFile.getContents(true); DataInputStream dIn = new DataInputStream(in)) {
 				int count= 0;
 				try {
 					count= dIn.readInt();
@@ -256,7 +247,7 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 					try {
 						for(int i= 0; i < count; i++) {
 							String name= dIn.readUTF();
-							IResource resource= getProject().findMember(new Path(name));
+							IResource resource= getProject().findMember(IPath.fromOSString(name));
 							if (resource != null) {
 								controlledResources.add(resource);
 							}
@@ -270,21 +261,17 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 						}
 					}
 				}
-			} finally {
-				if (in != null) {
-					try {
-						in.close();
-					} catch (IOException e) {
-						PessimisticFilesystemProviderPlugin.getInstance().logError(e, "Problems closing input stream on control file: " + controlFile);
-					}
-				}
+			} catch (IOException | CoreException e) {
+				PessimisticFilesystemProviderPlugin.getInstance().logError(e,
+						"Could not read control file: " + controlFile);
 			}
 		}
 		return controlledResources;
 	}
 
 	/*
-	 * Writes the currently controled resources to the control file for the container.
+	 * Writes the currently controlled resources to the control file for the
+	 * container.
 	 */
 	private void writeControlFile(IContainer container, IProgressMonitor monitor) throws CoreException {
 		IFile controlFile= getControlFile(container, monitor);
@@ -595,9 +582,9 @@ public class PessimisticFilesystemProvider extends RepositoryProvider  {
 		}
 		buffer.append(contents);
 		if (!prepend) {
-			buffer.append(System.getProperty("line.separator") + text);
+			buffer.append(System.lineSeparator() + text);
 		}
-		file.setContents(new ByteArrayInputStream(buffer.toString().getBytes()), false, false, null);
+		file.setContents(buffer.toString().getBytes(), false, false, null);
 	}
 
 	public static String getFileContents(IFile file) throws IOException, CoreException {

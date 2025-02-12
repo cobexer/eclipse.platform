@@ -14,11 +14,21 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.usecase;
 
-import java.util.*;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.assertExistsInFileSystem;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.assertExistsInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.buildResources;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
 
 /**
  * This session add some resources to MyProject. All resources
@@ -26,15 +36,15 @@ import org.eclipse.core.runtime.Path;
  * but not written to disk (only in the tree).
  * Only snapshots are taken. No full saves.
  */
-public class Snapshot2Test extends SnapshotTest {
+public class Snapshot2Test {
 
 	protected static String[] defineHierarchy1() {
 		List<String> result = new ArrayList<>();
 		String[] old = Snapshot1Test.defineHierarchy1();
 		result.addAll(Arrays.asList(old));
-		result.add(new Path(PROJECT_1).append("added file").toString());
-		result.add(new Path(PROJECT_1).append("yet another file").toString());
-		result.add(new Path(PROJECT_1).append("a folder").addTrailingSeparator().toString());
+		result.add(IPath.fromOSString(SnapshotTest.PROJECT_1).append("added file").toString());
+		result.add(IPath.fromOSString(SnapshotTest.PROJECT_1).append("yet another file").toString());
+		result.add(IPath.fromOSString(SnapshotTest.PROJECT_1).append("a folder").addTrailingSeparator().toString());
 		return result.toArray(new String[result.size()]);
 	}
 
@@ -42,73 +52,61 @@ public class Snapshot2Test extends SnapshotTest {
 		return new String[] {"/added file", "/yet another file", "/a folder/"};
 	}
 
-	public void testChangeMyProject() {
+	public void testChangeMyProject() throws CoreException {
 		// MyProject
-		IProject project = getWorkspace().getRoot().getProject(PROJECT_1);
-		assertTrue("0.1", project.exists());
-		assertTrue("0.2", project.isOpen());
+		IProject project = getWorkspace().getRoot().getProject(SnapshotTest.PROJECT_1);
+		assertTrue(project.exists());
+		assertTrue(project.isOpen());
 
 		// create some children
 		IResource[] resources = buildResources(project, defineHierarchy1());
-		ensureExistsInWorkspace(resources, true);
-		assertExistsInFileSystem("1.1", resources);
-		assertExistsInWorkspace("1.2", resources);
+		createInWorkspace(resources);
+		assertExistsInFileSystem(resources);
+		assertExistsInWorkspace(resources);
 	}
 
-	public void testChangeProject2() {
-		IProject project = getWorkspace().getRoot().getProject("Project2");
-		assertTrue("0.1", project.exists());
-		assertTrue("0.2", project.isOpen());
+	public void testChangeProject2() throws CoreException {
+		IProject project = getWorkspace().getRoot().getProject(SnapshotTest.PROJECT_2);
+		assertTrue(project.exists());
+		assertTrue(project.isOpen());
 
 		// remove all resources
-		try {
-			IResource[] children = project.members();
-			getWorkspace().delete(children, true, null);
-		} catch (CoreException e) {
-			fail("0.5", e);
-		}
+		IResource[] children = project.members();
+		getWorkspace().delete(children, true, null);
 
 		// create some children
 		IResource[] resources = buildResources(project, defineHierarchy2());
-		ensureExistsInWorkspace(resources, true);
-		assertExistsInFileSystem("1.1", resources);
-		assertExistsInWorkspace("1.2", resources);
+		createInWorkspace(resources);
+		assertExistsInFileSystem(resources);
+		assertExistsInWorkspace(resources);
 	}
 
-	public void testSnapshotWorkspace() {
-		try {
-			getWorkspace().save(false, null);
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
+	public void testSnapshotWorkspace() throws CoreException {
+		getWorkspace().save(false, null);
 	}
 
-	public void testVerifyPreviousSession() {
+	public void testVerifyPreviousSession() throws CoreException {
 		// MyProject
-		IProject project = getWorkspace().getRoot().getProject(PROJECT_1);
-		assertTrue("0.0", project.exists());
-		assertTrue("0.1", !project.isOpen());
+		IProject project = getWorkspace().getRoot().getProject(SnapshotTest.PROJECT_1);
+		assertTrue(project.exists());
+		assertFalse(project.isOpen());
 
-		try {
-			project.open(null);
-		} catch (CoreException e) {
-			fail("1.0", e);
-		}
-		assertTrue("1.2", project.isOpen());
+		project.open(null);
+		assertTrue(project.isOpen());
 
 		// verify existence of children
 		IResource[] resources = buildResources(project, Snapshot1Test.defineHierarchy1());
-		assertExistsInFileSystem("2.1", resources);
-		assertExistsInWorkspace("2.2", resources);
+		assertExistsInFileSystem(resources);
+		assertExistsInWorkspace(resources);
 
 		// Project2
-		project = getWorkspace().getRoot().getProject(PROJECT_2);
-		assertTrue("3.0", project.exists());
-		assertTrue("3.1", project.isOpen());
+		project = getWorkspace().getRoot().getProject(SnapshotTest.PROJECT_2);
+		assertTrue(project.exists());
+		assertTrue(project.isOpen());
 
 		// verify existence of children
 		resources = buildResources(project, Snapshot1Test.defineHierarchy2());
-		assertExistsInFileSystem("5.1", resources);
-		assertExistsInWorkspace("5.2", resources);
+		assertExistsInFileSystem(resources);
+		assertExistsInWorkspace(resources);
 	}
 }

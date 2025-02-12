@@ -13,19 +13,13 @@
  *******************************************************************************/
 package org.eclipse.core.tests.runtime;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileFilter;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URL;
-
+import java.nio.file.Files;
 import org.eclipse.core.runtime.FileLocator;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.Plugin;
 import org.osgi.framework.BundleContext;
 
@@ -102,7 +96,7 @@ public class RuntimeTestsPlugin extends Plugin {
 		if (base == null)
 			return null;
 		try {
-			String osPath = new Path(FileLocator.toFileURL(base).getPath()).toOSString();
+			String osPath = IPath.fromOSString(FileLocator.toFileURL(base).getPath()).toOSString();
 			File result = new File(osPath);
 			return result.getCanonicalPath().equals(result.getPath()) ? result : null;
 		} catch (IOException e) {
@@ -140,34 +134,7 @@ public class RuntimeTestsPlugin extends Plugin {
 				copy(element, new File(target, element.getName()));
 			return;
 		}
-		InputStream input = null;
-		OutputStream output = null;
-		try {
-			input = new BufferedInputStream(new FileInputStream(source));
-			output = new BufferedOutputStream(new FileOutputStream(target));
-
-			byte[] buffer = new byte[8192];
-			int bytesRead = 0;
-			while ((bytesRead = input.read(buffer)) != -1)
-				output.write(buffer, 0, bytesRead);
-		} finally {
-			if (input != null) {
-				try {
-					input.close();
-				} catch (IOException e) {
-					System.err.println("Exception while trying to close input stream on: " + source.getAbsolutePath());
-					e.printStackTrace();
-				}
-			}
-			if (output != null) {
-				try {
-					output.close();
-				} catch (IOException e) {
-					System.err.println("Exception while trying to close output stream on: " + target.getAbsolutePath());
-					e.printStackTrace();
-				}
-			}
-		}
+		Files.copy(source.toPath(), target.toPath());
 	}
 
 }

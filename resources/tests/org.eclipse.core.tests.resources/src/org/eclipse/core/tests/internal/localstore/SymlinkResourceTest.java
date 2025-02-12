@@ -15,43 +15,59 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.localstore;
 
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.harness.FileSystemHelper.canCreateSymLinks;
+import static org.eclipse.core.tests.harness.FileSystemHelper.createSymLink;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.waitForRefresh;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
+
+import java.io.IOException;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceVisitor;
+import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.tests.resources.WorkspaceTestRule;
+import org.junit.Rule;
+import org.junit.Test;
 
-public class SymlinkResourceTest extends LocalStoreTest {
+public class SymlinkResourceTest {
 
-	protected void mkLink(IFileStore dir, String src, String tgt, boolean isDir) {
-		try {
-			createSymLink(dir.toLocalFile(EFS.NONE, getMonitor()), src, tgt, isDir);
-		} catch (CoreException e) {
-			fail("mkLink", e);
-		}
+	@Rule
+	public WorkspaceTestRule workspaceRule = new WorkspaceTestRule();
+
+	private void mkLink(IFileStore dir, String src, String tgt, boolean isDir) throws CoreException, IOException {
+		createSymLink(dir.toLocalFile(EFS.NONE, createTestMonitor()), src, tgt, isDir);
 	}
 
-	protected void createBug232426Structure(IFileStore rootDir) throws CoreException {
+	protected void createBug232426Structure(IFileStore rootDir) throws CoreException, IOException {
 		IFileStore folderA = rootDir.getChild("a");
 		IFileStore folderB = rootDir.getChild("b");
 		IFileStore folderC = rootDir.getChild("c");
-		folderA.mkdir(EFS.NONE, getMonitor());
-		folderB.mkdir(EFS.NONE, getMonitor());
-		folderC.mkdir(EFS.NONE, getMonitor());
+		folderA.mkdir(EFS.NONE, createTestMonitor());
+		folderB.mkdir(EFS.NONE, createTestMonitor());
+		folderC.mkdir(EFS.NONE, createTestMonitor());
 
 		/* create symbolic links */
-		mkLink(folderA, "link", new Path("../b").toOSString(), true);
-		mkLink(folderB, "linkA", new Path("../a").toOSString(), true);
-		mkLink(folderB, "linkC", new Path("../c").toOSString(), true);
-		mkLink(folderC, "link", new Path("../b").toOSString(), true);
+		mkLink(folderA, "link", IPath.fromOSString("../b").toOSString(), true);
+		mkLink(folderB, "linkA", IPath.fromOSString("../a").toOSString(), true);
+		mkLink(folderB, "linkC", IPath.fromOSString("../c").toOSString(), true);
+		mkLink(folderC, "link", IPath.fromOSString("../b").toOSString(), true);
 	}
 
-	protected void createBug358830Structure(IFileStore rootDir) throws CoreException {
+	protected void createBug358830Structure(IFileStore rootDir) throws CoreException, IOException {
 		IFileStore folderA = rootDir.getChild("a");
-		folderA.mkdir(EFS.NONE, getMonitor());
+		folderA.mkdir(EFS.NONE, createTestMonitor());
 
 		/* create trivial recursive symbolic link */
-		mkLink(folderA, "link", new Path("../").toOSString(), true);
+		mkLink(folderA, "link", IPath.fromOSString("../").toOSString(), true);
 	}
 
 	/**
@@ -67,20 +83,24 @@ public class SymlinkResourceTest extends LocalStoreTest {
 	 * been visited before.
 	 * See <a href="https://bugs.eclipse.org/bugs/show_bug.cgi?id=232426">bug 232426</a>
 	 */
+	@Test
 	public void testBug232426() throws Exception {
-		// Only activate this test if testing of symbolic links is possible.
-		if (!canCreateSymLinks()) {
-			return;
-		}
+		assumeTrue("only relevant for platforms supporting symbolic links", canCreateSymLinks());
+
+		IProject project = getWorkspace().getRoot().getProject("Project");
+		createInWorkspace(project);
 		/* Re-use projects which are cleaned up automatically */
-		final IProject project = projects[0];
 		getWorkspace().run((IWorkspaceRunnable) monitor -> {
 			/* delete open project because we must re-open with BACKGROUND_REFRESH */
-			project.delete(IResource.NEVER_DELETE_PROJECT_CONTENT, getMonitor());
+			project.delete(IResource.NEVER_DELETE_PROJECT_CONTENT, createTestMonitor());
 			project.create(null);
-			createBug232426Structure(EFS.getStore(project.getLocationURI()));
+			try {
+				createBug232426Structure(EFS.getStore(project.getLocationURI()));
+			} catch (IOException e) {
+				throw new IllegalStateException("unexpected IOException occurred", e);
+			}
 			//Bug only happens with BACKGROUND_REFRESH.
-			project.open(IResource.BACKGROUND_REFRESH, getMonitor());
+			project.open(IResource.BACKGROUND_REFRESH, createTestMonitor());
 		}, null);
 
 		//wait for BACKGROUND_REFRESH to complete.
@@ -98,19 +118,23 @@ public class SymlinkResourceTest extends LocalStoreTest {
 		});
 	}
 
+	@Test
 	public void testBug358830() throws Exception {
-		// Only activate this test if testing of symbolic links is possible.
-		if (!canCreateSymLinks()) {
-			return;
-		}
+		assumeTrue("only relevant for platforms supporting symbolic links", canCreateSymLinks());
+
+		IProject project = getWorkspace().getRoot().getProject("Project");
+		createInWorkspace(project);
 		/* Re-use projects which are cleaned up automatically */
-		final IProject project = projects[0];
 		getWorkspace().run((IWorkspaceRunnable) monitor -> {
 			/* delete open project because we must re-open with BACKGROUND_REFRESH */
-			project.delete(IResource.NEVER_DELETE_PROJECT_CONTENT, getMonitor());
+			project.delete(IResource.NEVER_DELETE_PROJECT_CONTENT, createTestMonitor());
 			project.create(null);
-			createBug358830Structure(EFS.getStore(project.getLocationURI()));
-			project.open(IResource.BACKGROUND_REFRESH, getMonitor());
+			try {
+				createBug358830Structure(EFS.getStore(project.getLocationURI()));
+			} catch (IOException e) {
+				throw new IllegalStateException("unexpected IOException occurred", e);
+			}
+			project.open(IResource.BACKGROUND_REFRESH, createTestMonitor());
 		}, null);
 
 		//wait for BACKGROUND_REFRESH to complete.
@@ -125,4 +149,5 @@ public class SymlinkResourceTest extends LocalStoreTest {
 		// --> 5 elements to visit
 		assertEquals(5, resourceCount[0]);
 	}
+
 }

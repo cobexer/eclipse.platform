@@ -70,7 +70,7 @@ public abstract class PatchCompareEditorInput extends CompareEditorInput {
 	}
 
 	class PatcherCompareEditorLabelProvider extends LabelProvider {
-		private ILabelProvider wrappedProvider;
+		private final ILabelProvider wrappedProvider;
 
 		public PatcherCompareEditorLabelProvider(ILabelProvider labelProvider) {
 			wrappedProvider = labelProvider;
@@ -127,14 +127,14 @@ public abstract class PatchCompareEditorInput extends CompareEditorInput {
 				PatchDiffNode node = (PatchDiffNode) element;
 				if (!node.isEnabled() && image != null) {
 					LocalResourceManager imageCache = PatchCompareEditorInput.getImageCache(getPatcher().getConfiguration());
-					return imageCache.createImage(createOverlay(image, CompareUIPlugin.getImageDescriptor(ICompareUIConstants.REMOVED_OVERLAY), IDecoration.TOP_LEFT));
+					return imageCache.create(createOverlay(image, CompareUIPlugin.getImageDescriptor(ICompareUIConstants.REMOVED_OVERLAY), IDecoration.TOP_LEFT));
 				}
 			}
 			if (element instanceof HunkDiffNode) {
 				HunkDiffNode node = (HunkDiffNode) element;
 				if (node.isManuallyMerged()) {
 					LocalResourceManager imageCache = PatchCompareEditorInput.getImageCache(getPatcher().getConfiguration());
-					return imageCache.createImage(PatchCompareEditorInput.createOverlay(image, CompareUIPlugin.getImageDescriptor(ICompareUIConstants.IS_MERGED_OVERLAY), IDecoration.TOP_LEFT));
+					return imageCache.create(PatchCompareEditorInput.createOverlay(image, CompareUIPlugin.getImageDescriptor(ICompareUIConstants.IS_MERGED_OVERLAY), IDecoration.TOP_LEFT));
 				}
 			}
 			return image;
@@ -150,8 +150,6 @@ public abstract class PatchCompareEditorInput extends CompareEditorInput {
 	/**
 	 * Creates a new PatchCompareEditorInput and makes use of the passed in CompareConfiguration
 	 * to configure the UI elements.
-	 * @param patcher
-	 * @param configuration
 	 */
 	public PatchCompareEditorInput(WorkspacePatcher patcher, CompareConfiguration configuration) {
 		super(configuration);

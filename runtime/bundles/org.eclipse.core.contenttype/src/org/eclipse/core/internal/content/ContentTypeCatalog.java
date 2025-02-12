@@ -14,13 +14,35 @@
  *******************************************************************************/
 package org.eclipse.core.internal.content;
 
-import java.io.*;
-import java.util.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.regex.Pattern;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.content.*;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.ISafeRunnable;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.SafeRunner;
+import org.eclipse.core.runtime.content.IContentDescriber;
+import org.eclipse.core.runtime.content.IContentDescription;
+import org.eclipse.core.runtime.content.IContentType;
+import org.eclipse.core.runtime.content.IContentTypeManager;
 import org.eclipse.core.runtime.content.IContentTypeManager.ISelectionPolicy;
+import org.eclipse.core.runtime.content.IContentTypeSettings;
+import org.eclipse.core.runtime.content.ITextContentDescriber;
+import org.eclipse.core.runtime.content.XMLRootElementContentDescriber;
+import org.eclipse.core.runtime.content.XMLRootElementContentDescriber2;
 import org.eclipse.core.runtime.preferences.IScopeContext;
 import org.eclipse.osgi.util.NLS;
 
@@ -28,7 +50,7 @@ public final class ContentTypeCatalog {
 	private static final IContentType[] NO_CONTENT_TYPES = new IContentType[0];
 
 	/**
-	 * All fields are guarded by lock on "this"
+	 * Access to all fields is synchronized by "this"
 	 */
 	private final Map<ContentType, ContentType[]> allChildren = new HashMap<>();
 	private final Map<String, IContentType> contentTypes = new HashMap<>();
@@ -37,15 +59,13 @@ public final class ContentTypeCatalog {
 	private final Map<String, Pattern> compiledRegexps = new HashMap<>();
 	private final Map<Pattern, String> initialPatternForRegexp = new HashMap<>();
 	private final Map<Pattern, Set<ContentType>> fileRegexps = new HashMap<>();
-	private int generation;
-	private ContentTypeManager manager;
+	private final int generation;
+	private final ContentTypeManager manager;
 
 	/**
 	 * Return true if type1 is an ancestor of type2 or if type2 is an ancestor of
 	 * type1
 	 *
-	 * @param type1
-	 * @param type2
 	 * @return true type1 is ancestor or type2, or vice versa. false otherwise
 	 */
 	private static boolean isAncestor(ContentType type1, ContentType type2) {
@@ -77,7 +97,7 @@ public final class ContentTypeCatalog {
 	 * A sorting policy where the more specific content type wins. Lexicographical comparison is done
 	 * as a last resort when all other criteria fail.
 	 */
-	private Comparator<IContentType> policyConstantSpecificIsBetter = (IContentType o1, IContentType o2) -> {
+	private final Comparator<IContentType> policyConstantSpecificIsBetter = (IContentType o1, IContentType o2) -> {
 		ContentType type1 = (ContentType) o1;
 		ContentType type2 = (ContentType) o2;
 		if (isAncestor(type1, type2)) {
@@ -97,7 +117,7 @@ public final class ContentTypeCatalog {
 	/**
 	 * A sorting policy where the more general content type wins.
 	 */
-	private Comparator<IContentType> policyGeneralIsBetter = (IContentType o1, IContentType o2) -> {
+	private final Comparator<IContentType> policyGeneralIsBetter = (IContentType o1, IContentType o2) -> {
 		ContentType type1 = (ContentType) o1;
 		ContentType type2 = (ContentType) o2;
 		if (isAncestor(type1, type2)) {
@@ -116,7 +136,7 @@ public final class ContentTypeCatalog {
 	/**
 	 * A sorting policy where content types are sorted by id.
 	 */
-	private Comparator<IContentType> policyLexicographical = (IContentType o1, IContentType o2) -> {
+	private final Comparator<IContentType> policyLexicographical = (IContentType o1, IContentType o2) -> {
 		ContentType type1 = (ContentType) o1;
 		ContentType type2 = (ContentType) o2;
 		return type1.getId().compareTo(type2.getId());
@@ -124,7 +144,7 @@ public final class ContentTypeCatalog {
 	/**
 	 * A sorting policy where the more specific content type wins.
 	 */
-	private Comparator<IContentType> policySpecificIsBetter = (IContentType o1, IContentType o2) -> {
+	private final Comparator<IContentType> policySpecificIsBetter = (IContentType o1, IContentType o2) -> {
 		ContentType type1 = (ContentType) o1;
 		ContentType type2 = (ContentType) o2;
 		if (isAncestor(type1, type2)) {
@@ -369,7 +389,7 @@ public final class ContentTypeCatalog {
 	}
 
 	IContentType[] findContentTypesFor(ContentTypeMatcher matcher, final String fileName) {
-		IContentType[] selected = concat(internalFindContentTypesFor(matcher, fileName, policyConstantGeneralIsBetter));
+		IContentType[] selected = concat(internalFindContentTypesSorted(matcher, fileName, policyConstantGeneralIsBetter));
 		// give the policy a chance to change the results
 		ISelectionPolicy policy = matcher.getPolicy();
 		if (policy != null)
@@ -462,7 +482,7 @@ public final class ContentTypeCatalog {
 		return true;
 	}
 
-	private IContentType[] internalFindContentTypesFor(ILazySource buffer, IContentType[][] subset, Comparator<IContentType> validPolicy, Comparator<IContentType> indeterminatePolicy) throws IOException {
+	private IContentType[] internalFindContentTypesForSubset(ILazySource buffer, IContentType[][] subset, Comparator<IContentType> validPolicy, Comparator<IContentType> indeterminatePolicy) throws IOException {
 		Map<String, Object> properties = new HashMap<>();
 		final List<ContentType> appropriate = new ArrayList<>(5);
 		final int validFullName = collectMatchingByContents(0, subset[0], appropriate, buffer, properties);
@@ -503,7 +523,7 @@ public final class ContentTypeCatalog {
 			indeterminatePolicy = policyConstantGeneralIsBetter;
 			validPolicy = policyConstantSpecificIsBetter;
 		} else {
-			subset = internalFindContentTypesFor(matcher, fileName, policyLexicographical);
+			subset = internalFindContentTypesSorted(matcher, fileName, policyLexicographical);
 			indeterminatePolicy = policyGeneralIsBetter;
 			validPolicy = policySpecificIsBetter;
 		}
@@ -526,7 +546,7 @@ public final class ContentTypeCatalog {
 			// only eligible content type is binary and contents are text, ignore it
 			return NO_CONTENT_TYPES;
 		}
-		return internalFindContentTypesFor(buffer, subset, validPolicy, indeterminatePolicy);
+		return internalFindContentTypesForSubset(buffer, subset, validPolicy, indeterminatePolicy);
 	}
 
 	/**
@@ -535,7 +555,7 @@ public final class ContentTypeCatalog {
 	 * @return all matching content types in the preferred order
 	 * @see IContentTypeManager#findContentTypesFor(String)
 	 */
-	synchronized private IContentType[][] internalFindContentTypesFor(ContentTypeMatcher matcher, final String fileName, Comparator<IContentType> sortingPolicy) {
+	synchronized private IContentType[][] internalFindContentTypesSorted(ContentTypeMatcher matcher, final String fileName, Comparator<IContentType> sortingPolicy) {
 		IScopeContext context = matcher.getContext();
 		IContentType[][] result = { NO_CONTENT_TYPES, NO_CONTENT_TYPES, NO_CONTENT_TYPES };
 
@@ -710,27 +730,24 @@ public final class ContentTypeCatalog {
 		for (ContentType root : source) {
 			// From a given content type, check if it matches, and
 			// include any children that match as well.
-			internalAccept(new ContentTypeVisitor() {
-				@Override
-				public int visit(ContentType type) {
-					if (type != root && type.hasBuiltInAssociations())
-						// this content type has built-in associations - visit it later as root
-						return RETURN;
-					if (type == root && !type.hasFileSpec(context, fileSpecText, fileSpecType))
-						// it is the root and does not match the file name - do not add it nor look into its children
-						return RETURN;
-					// either the content type is the root and matches the file name or
-					// is a sub content type and does not have built-in files specs
-					if (!existing.contains(type))
-						destination.add(type);
-					return CONTINUE;
-				}
+			internalAccept(contentType -> {
+				if (contentType != root && contentType.hasBuiltInAssociations())
+					// this content type has built-in associations - visit it later as root
+					return ContentTypeVisitor.RETURN;
+				if (contentType == root && !contentType.hasFileSpec(context, fileSpecText, fileSpecType))
+					// it is the root and does not match the file name - do not add it nor look into its children
+					return ContentTypeVisitor.RETURN;
+				// either the content type is the root and matches the file name or
+				// is a sub content type and does not have built-in files specs
+				if (!existing.contains(contentType))
+					destination.add(contentType);
+				return ContentTypeVisitor.CONTINUE;
 			}, root);
 		}
 		return destination;
 	}
 
-	void removeContentType(String contentTypeIdentifier) throws CoreException {
+	synchronized void removeContentType(String contentTypeIdentifier) throws CoreException {
 		ContentType contentType = getContentType(contentTypeIdentifier);
 		if (contentType == null) {
 			return;
@@ -738,7 +755,7 @@ public final class ContentTypeCatalog {
 		if (!contentType.isUserDefined()) {
 			throw new IllegalArgumentException("Content type must be user-defined."); //$NON-NLS-1$
 		}
-		contentTypes.remove(contentType.getId());
+		this.contentTypes.remove(contentType.getId());
 	}
 
 }

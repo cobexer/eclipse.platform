@@ -13,50 +13,52 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
+import static java.util.function.Predicate.not;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.getFileStore;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.removeFromWorkspace;
+
+import java.io.IOException;
+import java.nio.file.Path;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
-import org.eclipse.core.resources.*;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFolder;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests copying a file to a linked folder that does not exist on disk
  */
-public class Bug_126104 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_126104 {
 
-	public void testBug() {
+	@Test
+	public void testBug(@TempDir Path tempDirectory) throws CoreException, IOException {
 		IProject project = getWorkspace().getRoot().getProject("p1");
 		IFile source = project.getFile("source");
-		ensureExistsInWorkspace(source, true);
+		createInWorkspace(source);
 		IFolder link = project.getFolder("link");
-		IFileStore location = getTempStore();
-		try {
-			link.createLink(location.toURI(), IResource.ALLOW_MISSING_LOCAL, getMonitor());
-		} catch (CoreException e) {
-			fail("0.99", e);
-		}
+		IFileStore location = getFileStore(tempDirectory);
+		link.createLink(location.toURI(), IResource.ALLOW_MISSING_LOCAL, createTestMonitor());
 		IFile destination = link.getFile(source.getName());
-		try {
-			source.copy(destination.getFullPath(), IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("1.99", e);
-		}
-		assertTrue("1.0", destination.exists());
+		source.copy(destination.getFullPath(), IResource.NONE, createTestMonitor());
+		assertThat(destination).matches(IResource::exists, "exists");
 
 		//try the same thing with move
-		ensureDoesNotExistInWorkspace(destination);
-		try {
-			location.delete(EFS.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("2.99", e);
-		}
-		try {
-			source.move(destination.getFullPath(), IResource.NONE, getMonitor());
-		} catch (CoreException e) {
-			fail("3.99", e);
-		}
-		assertTrue("3.0", !source.exists());
-		assertTrue("3.1", destination.exists());
+		removeFromWorkspace(destination);
+		location.delete(EFS.NONE, createTestMonitor());
+		source.move(destination.getFullPath(), IResource.NONE, createTestMonitor());
+		assertThat(source).matches(not(IResource::exists), "not exists");
+		assertThat(destination).matches(IResource::exists, "exists");
 	}
 
 }

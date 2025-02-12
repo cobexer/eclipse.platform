@@ -16,6 +16,7 @@
  *******************************************************************************/
 package org.eclipse.e4.core.di.internal.extensions;
 
+import jakarta.annotation.PreDestroy;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Collection;
@@ -26,7 +27,6 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import javax.annotation.PreDestroy;
 import org.eclipse.e4.core.contexts.IEclipseContext;
 import org.eclipse.e4.core.di.IInjector;
 import org.eclipse.e4.core.di.InjectionException;
@@ -95,8 +95,8 @@ public class EventObjectSupplier extends ExtendedObjectSupplier implements Event
 
 	// A combo of { IRequestor + topic } used in Map lookups
 	static private class Subscriber {
-		private IRequestor requestor;
-		private String topic;
+		private final IRequestor requestor;
+		private final String topic;
 
 		public Subscriber(IRequestor requestor, String topic) {
 			super();
@@ -130,7 +130,7 @@ public class EventObjectSupplier extends ExtendedObjectSupplier implements Event
 
 	}
 
-	private Map<Subscriber, ServiceRegistration<EventHandler>> registrations = new HashMap<>();
+	private final Map<Subscriber, ServiceRegistration<EventHandler>> registrations = new HashMap<>();
 
 	protected void addCurrentEvent(String topic, Event event) {
 		synchronized (currentEvents) {

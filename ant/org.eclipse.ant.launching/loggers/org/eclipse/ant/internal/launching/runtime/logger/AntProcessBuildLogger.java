@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2013 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -28,7 +28,6 @@ import org.eclipse.ant.internal.core.IAntCoreConstants;
 import org.eclipse.ant.internal.launching.AntLaunch;
 import org.eclipse.ant.internal.launching.AntLaunching;
 import org.eclipse.ant.internal.launching.AntLaunchingUtil;
-import org.eclipse.ant.internal.launching.debug.AntDebugState;
 import org.eclipse.ant.internal.launching.launchConfigurations.AntProcess;
 import org.eclipse.ant.internal.launching.launchConfigurations.AntStreamMonitor;
 import org.eclipse.ant.internal.launching.launchConfigurations.AntStreamsProxy;
@@ -63,7 +62,7 @@ public class AntProcessBuildLogger extends NullBuildLogger {
 
 		StringBuffer fullMessage = new StringBuffer();
 		if (!loggingToLogFile()) {
-			fullMessage.append(System.getProperty("line.separator")); //$NON-NLS-1$
+			fullMessage.append(System.lineSeparator());
 		}
 		if (event.getException() == null && event.getTask() != null && !fEmacsMode) {
 			adornMessage(event, fullMessage);
@@ -117,7 +116,7 @@ public class AntProcessBuildLogger extends NullBuildLogger {
 			appendAndLink(fullMessage, location, label, offset, line);
 			line = r.readLine();
 			while (line != null) {
-				fullMessage.append(System.getProperty("line.separator")); //$NON-NLS-1$
+				fullMessage.append(System.lineSeparator());
 				fullMessage.append(column);
 				appendAndLink(fullMessage, location, label, offset, line);
 				line = r.readLine();
@@ -262,7 +261,7 @@ public class AntProcessBuildLogger extends NullBuildLogger {
 			result.append(RuntimeMessages.AntProcessBuildLogger__milliseconds_6);
 		}
 
-		result.append(System.getProperty("line.separator")); //$NON-NLS-1$
+		result.append(System.lineSeparator());
 		return result.toString();
 	}
 
@@ -282,12 +281,12 @@ public class AntProcessBuildLogger extends NullBuildLogger {
 			return;
 		}
 		Target target = event.getTarget();
-		StringBuilder msg = new StringBuilder(System.getProperty("line.separator")); //$NON-NLS-1$
+		StringBuilder msg = new StringBuilder(System.lineSeparator());
 		String targetName = target.getName();
 		msg.append(targetName);
 		msg.append(':');
 		String message = msg.toString();
-		Location location = AntDebugState.getLocation(target);
+		Location location = target.getLocation();
 		if (location != null && location != Location.UNKNOWN_LOCATION) {
 			IRegion region = new Region(0, targetName.length());
 			AntProcess antProcess = getAntProcess(fProcessId);

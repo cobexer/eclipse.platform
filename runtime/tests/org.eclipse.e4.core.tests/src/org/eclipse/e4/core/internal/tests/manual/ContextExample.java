@@ -16,8 +16,6 @@ package org.eclipse.e4.core.internal.tests.manual;
 
 import java.text.NumberFormat;
 
-import javax.inject.Inject;
-
 import org.eclipse.e4.core.contexts.ContextFunction;
 import org.eclipse.e4.core.contexts.ContextInjectionFactory;
 import org.eclipse.e4.core.contexts.EclipseContextFactory;
@@ -27,9 +25,8 @@ import org.eclipse.e4.core.internal.tests.CoreTestsActivator;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceRegistration;
 
-/**
- *
- */
+import jakarta.inject.Inject;
+
 public class ContextExample {
 	static class Crayon {
 		@Inject
@@ -97,9 +94,6 @@ public class ContextExample {
 		new ContextExample().price();
 	}
 
-	/**
-	 *
-	 */
 	public void run() {
 		IEclipseContext parent = EclipseContextFactory.create();
 		parent.set("complement", new ComplementaryColor());

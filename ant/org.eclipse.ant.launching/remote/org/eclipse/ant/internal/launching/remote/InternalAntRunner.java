@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2022 IBM Corporation and others.
+ * Copyright (c) 2000, 2025 IBM Corporation and others.
  * Portions Copyright  2000-2005 The Apache Software Foundation
  *
  * This program and the accompanying materials are made
@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -51,6 +50,7 @@ import org.apache.tools.ant.Target;
 import org.apache.tools.ant.Task;
 import org.apache.tools.ant.TaskAdapter;
 import org.apache.tools.ant.util.FileUtils;
+import org.apache.tools.ant.util.JavaEnvUtils;
 import org.eclipse.ant.internal.launching.remote.logger.RemoteAntBuildLogger;
 
 /**
@@ -58,6 +58,17 @@ import org.eclipse.ant.internal.launching.remote.logger.RemoteAntBuildLogger;
  * when running in the platform.
  */
 public class InternalAntRunner {
+
+	private static final boolean IS_SECURITY_MANAGER_SUPPORTED = isSecurityManagerAllowed();
+
+	private static boolean isSecurityManagerAllowed() {
+		String sm = System.getProperty("java.security.manager"); //$NON-NLS-1$
+		if (sm == null) { // default is 'disallow' since 18 and was 'allow' before
+			return !JavaEnvUtils.isAtLeastJavaVersion("18"); //$NON-NLS-1$
+		}
+		// Value is either 'disallow' or 'allow' or specifies the SecurityManager class to set
+		return !"disallow".equals(sm); //$NON-NLS-1$
+	}
 
 	/**
 	 * Message priority for project help messages.
@@ -110,12 +121,11 @@ public class InternalAntRunner {
 	private String loggerClassname = null;
 
 	/** Extra arguments to be parsed as command line arguments. */
-	private String[] extraArguments = null;
+	private final String[] extraArguments = null;
 
 	private boolean scriptExecuted = false;
 
-	@SuppressWarnings("unused")
-	private List<String> propertyFiles = new ArrayList<String>();
+	private final List<String> propertyFiles = new ArrayList<>();
 
 	/**
 	 * The Ant InputHandler class. There may be only one input handler.
@@ -152,7 +162,6 @@ public class InternalAntRunner {
 	/*
 	 * Helper method to ensure an array is converted into an ArrayList.
 	 */
-	@SuppressWarnings("unused")
 	static ArrayList<String> getArrayList(String[] args) {
 		if (args == null) {
 			return null;
@@ -160,7 +169,7 @@ public class InternalAntRunner {
 		// We could be using Arrays.asList() here, but it does not specify
 		// what kind of list it will return. We need a list that
 		// implements the method List.remove(Object) and ArrayList does.
-		ArrayList<String> result = new ArrayList<String>(args.length);
+		ArrayList<String> result = new ArrayList<>(args.length);
 		for (String arg : args) {
 			result.add(arg);
 		}
@@ -248,7 +257,6 @@ public class InternalAntRunner {
 	 * @param project
 	 *            the project to list targets from
 	 */
-	@SuppressWarnings("unused")
 	private void printTargets(Project project) {
 		// notify the logger that project help message are coming
 		// since there is no buildstarted or targetstarted to
@@ -262,9 +270,9 @@ public class InternalAntRunner {
 		Target currentTarget;
 		// split the targets in top-level and sub-targets depending
 		// on the presence of a description
-		List<String> topNames = new ArrayList<String>();
-		List<String> topDescriptions = new ArrayList<String>();
-		List<String> subNames = new ArrayList<String>();
+		List<String> topNames = new ArrayList<>();
+		List<String> topDescriptions = new ArrayList<>();
+		List<String> subNames = new ArrayList<>();
 
 		while (ptargets.hasMoreElements()) {
 			currentTarget = ptargets.nextElement();
@@ -287,13 +295,13 @@ public class InternalAntRunner {
 
 		String defaultTargetName = project.getDefaultTarget();
 		if (defaultTargetName != null && !IAntCoreConstants.EMPTY_STRING.equals(defaultTargetName)) { // shouldn't need to check but...
-			List<String> defaultName = new ArrayList<String>(1);
+			List<String> defaultName = new ArrayList<>(1);
 			List<String> defaultDesc = null;
 			defaultName.add(defaultTargetName);
 
 			int indexOfDefDesc = topNames.indexOf(defaultTargetName);
 			if (indexOfDefDesc >= 0) {
-				defaultDesc = new ArrayList<String>(1);
+				defaultDesc = new ArrayList<>(1);
 				defaultDesc.add(topDescriptions.get(indexOfDefDesc));
 			}
 			printTargets(project, defaultName, defaultDesc, RemoteAntMessages.getString("InternalAntRunner.Default_target__3"), maxLength); //$NON-NLS-1$
@@ -320,7 +328,7 @@ public class InternalAntRunner {
 	 */
 	private void printTargets(Project project, List<String> names, List<String> descriptions, String heading, int maxlen) {
 		// now, start printing the targets and their descriptions
-		String lSep = System.getProperty("line.separator"); //$NON-NLS-1$
+		String lSep = System.lineSeparator();
 
 		String spaces = "    "; //$NON-NLS-1$
 		while (spaces.length() < maxlen) {
@@ -447,7 +455,9 @@ public class InternalAntRunner {
 				printArguments(getCurrentProject());
 			}
 			try {
-				System.setSecurityManager(new AntSecurityManager(originalSM, Thread.currentThread()));
+				if (IS_SECURITY_MANAGER_SUPPORTED) {
+					System.setSecurityManager(new AntSecurityManager(originalSM, Thread.currentThread()));
+				}
 			}
 			catch (UnsupportedOperationException ex) {
 				logMessage(null, RemoteAntMessages.getString("InternalAntRunner.SecurityManagerError"), Project.MSG_WARN); //$NON-NLS-1$
@@ -618,9 +628,7 @@ public class InternalAntRunner {
 		if (!isVersionCompatible("1.5")) { //$NON-NLS-1$
 			BuildEvent event = new BuildEvent(project);
 			event.setException(error);
-			Iterator<BuildListener> iter = project.getBuildListeners().iterator();
-			while (iter.hasNext()) {
-				BuildListener listener = iter.next();
+			for (BuildListener listener : project.getBuildListeners()) {
 				listener.buildFinished(event);
 			}
 		} else {
@@ -790,7 +798,6 @@ public class InternalAntRunner {
 		}
 	}
 
-	@SuppressWarnings("unused")
 	private boolean preprocessCommandLine(List<String> commands) {
 
 		String arg = getArgument(commands, "-listener"); //$NON-NLS-1$
@@ -799,7 +806,7 @@ public class InternalAntRunner {
 				throw new BuildException(RemoteAntMessages.getString("InternalAntRunner.You_must_specify_a_classname_when_using_the_-listener_argument_1")); //$NON-NLS-1$
 			}
 			if (buildListeners == null) {
-				buildListeners = new ArrayList<String>(1);
+				buildListeners = new ArrayList<>(1);
 			}
 			buildListeners.add(arg);
 			arg = getArgument(commands, "-listener"); //$NON-NLS-1$
@@ -953,12 +960,11 @@ public class InternalAntRunner {
 		return true;
 	}
 
-	@SuppressWarnings("unused")
 	private void processTasksAndTypes(List<String> commands) {
 		String arg = getArgument(commands, "-eclipseTask"); //$NON-NLS-1$
 		while (arg != null) {
 			if (eclipseSpecifiedTasks == null) {
-				eclipseSpecifiedTasks = new HashMap<String, String>();
+				eclipseSpecifiedTasks = new HashMap<>();
 			}
 			int index = arg.indexOf(',');
 			if (index != -1) {
@@ -972,7 +978,7 @@ public class InternalAntRunner {
 		arg = getArgument(commands, "-eclipseType"); //$NON-NLS-1$
 		while (arg != null) {
 			if (eclipseSpecifiedTypes == null) {
-				eclipseSpecifiedTypes = new HashMap<String, String>();
+				eclipseSpecifiedTypes = new HashMap<>();
 			}
 			int index = arg.indexOf(',');
 			if (index != -1) {
@@ -1019,10 +1025,9 @@ public class InternalAntRunner {
 	/*
 	 * Checks for targets specified at the command line.
 	 */
-	@SuppressWarnings("unused")
 	private void processTargets(List<String> commands) {
 		if (targets == null) {
-			targets = new Vector<String>(commands.size());
+			targets = new Vector<>(commands.size());
 		}
 		for (String string : commands) {
 			targets.add(string);
@@ -1095,11 +1100,9 @@ public class InternalAntRunner {
 		return exceptionToBeThrown;
 	}
 
-	@SuppressWarnings("unused")
 	private void processMinusDProperties(List<String> commands) {
 		String[] args = commands.toArray(new String[commands.size()]);
-		for (int i = 0; i < args.length; i++) {
-			String arg = args[i];
+		for (String arg : args) {
 			if (arg.startsWith("-D")) { //$NON-NLS-1$
 				String name = arg.substring(2, arg.length());
 				String value = null;
@@ -1117,10 +1120,10 @@ public class InternalAntRunner {
 					continue;
 				}
 				if (userProperties == null) {
-					userProperties = new HashMap<String, String>();
+					userProperties = new HashMap<>();
 				}
 				userProperties.put(name, value);
-				commands.remove(args[i]);
+				commands.remove(arg);
 			}
 		}
 	}
@@ -1161,7 +1164,7 @@ public class InternalAntRunner {
 	 * Logs a message with the client outlining the usage of <b>Ant</b>.
 	 */
 	private void printUsage() {
-		String lSep = System.getProperty("line.separator"); //$NON-NLS-1$
+		String lSep = System.lineSeparator();
 		StringBuilder msg = new StringBuilder();
 		msg.append("ant ["); //$NON-NLS-1$
 		msg.append(RemoteAntMessages.getString("InternalAntRunner.options_13")); //$NON-NLS-1$
@@ -1283,13 +1286,11 @@ public class InternalAntRunner {
 	/**
 	 * Load all properties from the files specified by -propertyfile.
 	 */
-	@SuppressWarnings("unused")
 	private void loadPropertyFiles() {
 		for (String filename : propertyFiles) {
 			File file = getFileRelativeToBaseDir(filename);
 			Properties props = new Properties();
-			try {
-				FileInputStream fis = new FileInputStream(file);
+			try (FileInputStream fis = new FileInputStream(file)) {
 				props.load(fis);
 			}
 			catch (IOException e) {
@@ -1297,7 +1298,7 @@ public class InternalAntRunner {
 						filename, e.getMessage() });
 			}
 			if (userProperties == null) {
-				userProperties = new HashMap<String, String>();
+				userProperties = new HashMap<>();
 			}
 			Enumeration<?> propertyNames = props.propertyNames();
 			while (propertyNames.hasMoreElements()) {

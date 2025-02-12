@@ -17,7 +17,8 @@ package org.eclipse.core.internal.dtree;
 import java.io.DataInput;
 import java.io.IOException;
 import org.eclipse.core.internal.utils.Messages;
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.IPath;
 
 /**
  * Class used for reading a single data tree (no parents) from an input stream
@@ -73,13 +74,13 @@ public class DataTreeReader {
 
 		/* if not the root node */
 		if (parentPath != null) {
-			if (parentPath.equals(Path.ROOT) && newProjectName.length() > 0 && name.length() > 0) {
+			if (parentPath.equals(IPath.ROOT) && newProjectName.length() > 0 && name.length() > 0) {
 				/* use the supplied name for the project node */
 				name = newProjectName;
 			}
 			path = parentPath.append(name);
 		} else {
-			path = Path.ROOT;
+			path = IPath.ROOT;
 		}
 
 		Object data = null;
@@ -144,9 +145,9 @@ public class DataTreeReader {
 	 * the project (first node under root) in the returned tree
 	 * instead of the name read from the stream.
 	 */
-	public DeltaDataTree readTree(DeltaDataTree parent, DataInput input, String newProjectName) throws IOException {
-		this.input = input;
-		AbstractDataTreeNode root = readNode(Path.ROOT, newProjectName);
+	public DeltaDataTree readTree(DeltaDataTree parent, DataInput dataInput, String newProjectName) throws IOException {
+		this.input = dataInput;
+		AbstractDataTreeNode root = readNode(IPath.ROOT, newProjectName);
 		return new DeltaDataTree(root, parent);
 	}
 }

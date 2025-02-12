@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2004, 2012 IBM Corporation and others.
+ * Copyright (c) 2004, 2025 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -14,13 +14,16 @@
  *******************************************************************************/
 package org.eclipse.ant.tests.ui.editor;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
 
 import org.eclipse.ant.internal.ui.editor.AntEditor;
 import org.eclipse.ant.internal.ui.editor.text.XMLTextHover;
 import org.eclipse.ant.tests.ui.editor.performance.EditorTestHelper;
 import org.eclipse.ant.tests.ui.testplugin.AbstractAntUITest;
-import org.eclipse.ant.tests.ui.testplugin.ProjectCreationDecorator;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
@@ -28,14 +31,13 @@ import org.eclipse.jface.text.IRegion;
 import org.eclipse.jface.text.ITextSelection;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.PartInitException;
+import org.junit.After;
+import org.junit.Test;
 
 @SuppressWarnings("restriction")
 public class AntEditorTests extends AbstractAntUITest {
 
-	public AntEditorTests(String name) {
-		super(name);
-	}
-
+	@Test
 	public void testHoverForPath() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -48,6 +50,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertTrue("Expected the following hover text to match regex: " + correctResultRegEx, hoverText.matches(correctResultRegEx)); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testHoverForProperty() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -60,6 +63,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertTrue("Expected the following hover text to end with: " + correctResult, hoverText.endsWith(correctResult)); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testPropertyOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -71,6 +75,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "property", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testPatternSetHover() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -83,6 +88,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertTrue("Expected the following hover text to end with: " + correctResult + "was: " + hoverText, hoverText.endsWith(correctResult)); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testBadPatternSetHover() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -95,6 +101,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertTrue("Expected the following hover text to ends with: " + correctResult, hoverText.endsWith(correctResult)); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testFileSetHover() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -117,6 +124,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertTrue("Expected to see '<li>**/.hgtags</li>'", hoverText.contains(text)); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testTaskdefOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("taskdef.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -135,6 +143,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "taskdef", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testMacroDefOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("macrodef.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -156,6 +165,7 @@ public class AntEditorTests extends AbstractAntUITest {
 	/**
 	 * from bug 98853
 	 */
+	@Test
 	public void testMacroDefOpenDeclarationWithURI() throws PartInitException, BadLocationException {
 		IFile file = getIFile("98853.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -170,6 +180,7 @@ public class AntEditorTests extends AbstractAntUITest {
 	/**
 	 * Bug 95061
 	 */
+	@Test
 	public void testSelfClosingTagOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("macrodef.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -181,6 +192,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "macrodef", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testMacroDefAttributeOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("macrodef.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -192,6 +204,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "attribute", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testRefOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -203,6 +216,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "path", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testTargetOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -214,6 +228,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertEquals("Selection is not correct", "target", selection.getText()); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
+	@Test
 	public void testExtensionPointOpenDeclaration() throws PartInitException, BadLocationException {
 		IFile file = getIFile("antextpoint.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -227,10 +242,10 @@ public class AntEditorTests extends AbstractAntUITest {
 
 	/**
 	 * Tests that the augment task can open in the Ant editor
-	 * 
-	 * @see https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
-	 * @throws Exception
+	 *
+	 * See https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
 	 */
+	@Test
 	public void testAugmentOpenInEditor() throws Exception {
 		IFile file = getIFile("bug377075.ent"); //$NON-NLS-1$
 		IEditorPart part = EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -239,10 +254,10 @@ public class AntEditorTests extends AbstractAntUITest {
 
 	/**
 	 * Tests that the augment task can be shown and has the correct additions
-	 * 
-	 * @see https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
-	 * @throws Exception
+	 *
+	 * See https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
 	 */
+	@Test
 	public void testAugmentOpenAndSelect() throws Exception {
 		IFile file = getIFile("bug377075.ent"); //$NON-NLS-1$
 		IEditorPart part = EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -256,10 +271,10 @@ public class AntEditorTests extends AbstractAntUITest {
 
 	/**
 	 * Tests that the element augmented by the augment task properly displays the augmented elements when hovering
-	 * 
-	 * @see https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
-	 * @throws Exception
+	 *
+	 * See https://bugs.eclipse.org/bugs/show_bug.cgi?id=377075
 	 */
+	@Test
 	public void testAugmentOpenSelectHover() throws Exception {
 		IFile file = getIFile("bug377075.ent"); //$NON-NLS-1$
 		IEditorPart part = EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -279,16 +294,17 @@ public class AntEditorTests extends AbstractAntUITest {
 
 	/**
 	 * Tests that the Ant editor is resilient to using an Augment task that references an unknown id
-	 * 
-	 * @see https://bugs.eclipse.org/bugs/show_bug.cgi?id=396219
-	 * @throws Exception
+	 *
+	 * See https://bugs.eclipse.org/bugs/show_bug.cgi?id=396219
 	 */
+	@Test
 	public void testAugmentMissingId() throws Exception {
 		IFile file = getIFile("bug396219.ent"); //$NON-NLS-1$
 		IEditorPart part = EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
 		assertTrue("The opened editor must be the AntEditor", part instanceof AntEditor); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testHoverRegionWithSpaces() throws PartInitException, BadLocationException {
 		IFile file = getIFile("refid.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -304,6 +320,7 @@ public class AntEditorTests extends AbstractAntUITest {
 				+ text, region.getLength() == 7 && "compile".equals(text)); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testOpenImport() throws PartInitException {
 		IFile file = getIFile("import.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -313,6 +330,7 @@ public class AntEditorTests extends AbstractAntUITest {
 		assertNotNull("Should have a document", doc); //$NON-NLS-1$
 	}
 
+	@Test
 	public void testOpenImportViaClasspath() throws PartInitException {
 		IFile file = getIFile("importViaClasspath.xml"); //$NON-NLS-1$
 		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
@@ -338,12 +356,12 @@ public class AntEditorTests extends AbstractAntUITest {
 	/**
 	 * bug 195840 Import a XML file with BOM character in ant editor fails Runs on 1.5 vms or newer.
 	 */
+	@Test
 	public void testOpenImportWithByteOrderMark() throws PartInitException {
-		if (ProjectCreationDecorator.isJ2SE15Compatible()) {
-			IFile file = getIFile("importWithByteOrderMark.xml"); //$NON-NLS-1$
-			AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file, "org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
-			assertNotNull("Should have imported target", editor.getAntModel().getTargetNode("build")); //$NON-NLS-1$ //$NON-NLS-2$
-		}
+		IFile file = getIFile("importWithByteOrderMark.xml"); //$NON-NLS-1$
+		AntEditor editor = (AntEditor) EditorTestHelper.openInEditor(file,
+				"org.eclipse.ant.ui.internal.editor.AntEditor", true); //$NON-NLS-1$
+		assertNotNull("Should have imported target", editor.getAntModel().getTargetNode("build")); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	private int getOffsetWithinLine(AntEditor editor, int lineNumber, int offsetInLine) throws BadLocationException {
@@ -352,9 +370,8 @@ public class AntEditorTests extends AbstractAntUITest {
 		return offset;
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@After
+	public void tearDown() throws Exception {
 		EditorTestHelper.closeAllEditors();
-		super.tearDown();
 	}
 }

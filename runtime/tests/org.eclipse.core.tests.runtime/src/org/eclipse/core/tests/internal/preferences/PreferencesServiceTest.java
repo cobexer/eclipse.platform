@@ -14,13 +14,52 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.preferences;
 
-import java.io.*;
-import java.util.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
 import org.eclipse.core.internal.preferences.EclipsePreferences;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.preferences.*;
-import org.eclipse.core.tests.runtime.RuntimeTest;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.Plugin;
+import org.eclipse.core.runtime.preferences.ConfigurationScope;
+import org.eclipse.core.runtime.preferences.DefaultScope;
+import org.eclipse.core.runtime.preferences.IEclipsePreferences;
+import org.eclipse.core.runtime.preferences.IExportedPreferences;
+import org.eclipse.core.runtime.preferences.IPreferenceFilter;
+import org.eclipse.core.runtime.preferences.IPreferenceNodeVisitor;
+import org.eclipse.core.runtime.preferences.IPreferencesService;
+import org.eclipse.core.runtime.preferences.IScopeContext;
+import org.eclipse.core.runtime.preferences.InstanceScope;
+import org.eclipse.core.runtime.preferences.PreferenceFilterEntry;
+import org.eclipse.core.runtime.preferences.UserScope;
+import org.eclipse.core.tests.harness.FileSystemHelper;
 import org.eclipse.core.tests.runtime.RuntimeTestsPlugin;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.osgi.service.prefs.BackingStoreException;
 import org.osgi.service.prefs.Preferences;
 
@@ -28,13 +67,12 @@ import org.osgi.service.prefs.Preferences;
  * @since 3.0
  */
 @SuppressWarnings("restriction")
-public class PreferencesServiceTest extends RuntimeTest {
+public class PreferencesServiceTest {
 
 	static class ExportVerifier {
 
-		private IEclipsePreferences node;
-		private ByteArrayOutputStream output;
-		private Set<String> expected;
+		private final IEclipsePreferences node;
+		private final Set<String> expected;
 		private String[] excludes;
 		private IPreferenceFilter[] transfers;
 		private boolean useTransfers;
@@ -70,32 +108,19 @@ public class PreferencesServiceTest extends RuntimeTest {
 			expected.add('!' + root.absolutePath());
 		}
 
-		void verify() {
+		void verify() throws Exception {
 			IPreferencesService service = Platform.getPreferencesService();
-			this.output = new ByteArrayOutputStream();
-			try {
+			Properties properties = new Properties();
+			try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
 				if (useTransfers) {
 					service.exportPreferences(node, transfers, output);
 				} else {
 					service.exportPreferences(node, output, excludes);
 				}
-			} catch (CoreException e) {
-				fail("0.0", e);
-			}
-			ByteArrayInputStream input = new ByteArrayInputStream(output.toByteArray());
-			Properties properties = new Properties();
-			try {
-				properties.load(input);
-			} catch (IOException e) {
-				fail("1.0", e);
-			} finally {
-				try {
-					input.close();
-				} catch (IOException e) {
-					// ignore
+				try (ByteArrayInputStream input = new ByteArrayInputStream(output.toByteArray())) {
+					properties.load(input);
 				}
 			}
-
 			if (properties.isEmpty()) {
 				assertTrue("2.0", expected.isEmpty());
 				return;
@@ -107,11 +132,14 @@ public class PreferencesServiceTest extends RuntimeTest {
 		}
 	}
 
-	public PreferencesServiceTest(String name) {
-		super(name);
+	@AfterEach
+	public void tearDown() throws Exception {
+		Platform.getPreferencesService().getRootNode().node(TestScope.SCOPE).removeNode();
 	}
 
-	public void testImportExportBasic() {
+
+	@Test
+	public void testImportExportBasic() throws Exception {
 		IPreferencesService service = Platform.getPreferencesService();
 
 		// create test node hierarchy
@@ -131,19 +159,11 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertEquals("1.2", value1, actual);
 
 		// export it
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		try {
+		byte[] bytes;
+		try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
 			service.exportPreferences(test, output, (String[]) null);
-		} catch (CoreException e) {
-			fail("2.0", e);
-		} finally {
-			try {
-				output.close();
-			} catch (IOException e1) {
-				// ignore
-			}
+			bytes = output.toByteArray();
 		}
-		byte[] bytes = output.toByteArray();
 
 		// add new values
 		String newKey = getUniqueString() + '3';
@@ -159,17 +179,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertEquals("3.2", newOldValue, actual);
 
 		// import
-		ByteArrayInputStream input = new ByteArrayInputStream(bytes);
-		try {
+		try (ByteArrayInputStream input = new ByteArrayInputStream(bytes)) {
 			service.importPreferences(input);
-		} catch (CoreException e) {
-			fail("4.0", e);
-		} finally {
-			try {
-				input.close();
-			} catch (IOException e) {
-				// ignore
-			}
 		}
 
 		// verify
@@ -185,11 +196,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertTrue("5.4", !((EclipsePreferences) test).isDirty());
 
 		// clear all
-		try {
-			test.clear();
-		} catch (BackingStoreException e) {
-			fail("6.0", e);
-		}
+		test.clear();
 		actual = test.get(key, null);
 		assertNull("6.1", actual);
 		actual = test.get(key1, null);
@@ -198,17 +205,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertNull("6.3", actual);
 
 		// import
-		input = new ByteArrayInputStream(bytes);
-		try {
+		try (ByteArrayInputStream input = new ByteArrayInputStream(bytes)) {
 			service.importPreferences(input);
-		} catch (CoreException e) {
-			fail("7.0", e);
-		} finally {
-			try {
-				input.close();
-			} catch (IOException e) {
-				// ignore
-			}
 		}
 
 		// verify
@@ -221,26 +219,13 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertNull("8.2", actual);
 	}
 
-	private void assertEquals(String message, String[] one, String[] two) {
-		if (one == null && two == null) {
-			return;
-		}
-		if (one == two) {
-			return;
-		}
-		assertNotNull(message + ".1", one);
-		assertNotNull(message + ".2", two);
-		assertEquals(message + ".3", one.length, two.length);
-		for (int i = 0; i < one.length; i++) {
-			assertEquals(message + ".4." + i, one[i], two[i]);
-		}
-	}
-
+	@Test
 	public void testLookupOrder() {
 		IPreferencesService service = Platform.getPreferencesService();
 		String[] defaultOrder = new String[] {"project", //$NON-NLS-1$
 				InstanceScope.SCOPE, //
 				ConfigurationScope.SCOPE, //
+				UserScope.SCOPE, //
 				DefaultScope.SCOPE};
 		String[] fullOrder = new String[] {"a", "b", "c"};
 		String[] nullKeyOrder = new String[] {"e", "f", "g"};
@@ -248,86 +233,47 @@ public class PreferencesServiceTest extends RuntimeTest {
 		String key = getUniqueString();
 
 		// bogus set parms
-		try {
-			service.setDefaultLookupOrder(null, key, fullOrder);
-			fail("0.0");
-		} catch (IllegalArgumentException e) {
-			// expected
-		}
-		try {
-			service.setDefaultLookupOrder(qualifier, key, new String[] {"a", null, "b"});
-			fail("0.1");
-		} catch (IllegalArgumentException e) {
-			// expected
-		}
+		assertThrows(IllegalArgumentException.class, () -> service.setDefaultLookupOrder(null, key, fullOrder));
+		assertThrows(IllegalArgumentException.class,
+				() -> service.setDefaultLookupOrder(qualifier, key, new String[] { "a", null, "b" }));
 
 		// nothing set
-		String[] order = service.getDefaultLookupOrder(qualifier, key);
-		assertNull("1.0", order);
-		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("1.1", order);
-		assertEquals("1.2", defaultOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, key)).isNull();
+		assertThat(service.getLookupOrder(qualifier, key)).containsExactly(defaultOrder);
 
-		order = service.getDefaultLookupOrder(qualifier, null);
-		assertNull("1.3", order);
-		order = service.getLookupOrder(qualifier, null);
-		assertNotNull("1.4", order);
-		assertEquals("1.5", defaultOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, null)).isNull();
+		assertThat(service.getLookupOrder(qualifier, null)).containsExactly(defaultOrder);
 
 		// set for qualifier/key
 		service.setDefaultLookupOrder(qualifier, key, fullOrder);
-		order = service.getDefaultLookupOrder(qualifier, key);
-		assertNotNull("2.2", order);
-		assertEquals("2.3", fullOrder, order);
-		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("2.4", order);
-		assertEquals("2.5", fullOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, key)).containsExactly(fullOrder);
+		assertThat(service.getLookupOrder(qualifier, key)).containsExactly(fullOrder);
 
 		// nothing set for qualifier/null
-		order = service.getDefaultLookupOrder(qualifier, null);
-		assertNull("3.0", order);
-		order = service.getLookupOrder(qualifier, null);
-		assertNotNull("3.1", order);
-		assertEquals("3.2", defaultOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, null)).isNull();
+		assertThat(service.getLookupOrder(qualifier, null)).containsExactly(defaultOrder);
 
 		// set for qualifier/null
 		service.setDefaultLookupOrder(qualifier, null, nullKeyOrder);
-		order = service.getDefaultLookupOrder(qualifier, null);
-		assertNotNull("4.0", order);
-		assertEquals("4.1", nullKeyOrder, order);
-		order = service.getLookupOrder(qualifier, null);
-		assertNotNull("4.2", order);
-		assertEquals("4.3", nullKeyOrder, order);
-		order = service.getDefaultLookupOrder(qualifier, key);
-		assertNotNull("4.4", order);
-		assertEquals("4.5", fullOrder, order);
-		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("4.6", order);
-		assertEquals("4.7", fullOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, null)).containsExactly(nullKeyOrder);
+		assertThat(service.getLookupOrder(qualifier, null)).containsExactly(nullKeyOrder);
+		assertThat(service.getDefaultLookupOrder(qualifier, key)).containsExactly(fullOrder);
+		assertThat(service.getLookupOrder(qualifier, key)).containsExactly(fullOrder);
 
 		// clear qualifier/key (find qualifier/null)
 		service.setDefaultLookupOrder(qualifier, key, null);
-		order = service.getDefaultLookupOrder(qualifier, key);
-		assertNull("5.0", order);
-		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("5.1", order);
-		assertEquals("5.2", nullKeyOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, key)).isNull();
+		assertThat(service.getLookupOrder(qualifier, key)).containsExactly(nullKeyOrder);
 
 		// clear qualifier/null (find returns default-default)
 		service.setDefaultLookupOrder(qualifier, null, null);
-		order = service.getDefaultLookupOrder(qualifier, key);
-		assertNull("6.0", order);
-		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("6.1", order);
-		assertEquals("6.2", defaultOrder, order);
-
-		order = service.getDefaultLookupOrder(qualifier, null);
-		assertNull("6.3", order);
-		order = service.getLookupOrder(qualifier, null);
-		assertNotNull("6.4", order);
-		assertEquals("6.5", defaultOrder, order);
+		assertThat(service.getDefaultLookupOrder(qualifier, key)).isNull();
+		assertThat(service.getLookupOrder(qualifier, key)).containsExactly(defaultOrder);
+		assertThat(service.getDefaultLookupOrder(qualifier, null)).isNull();
+		assertThat(service.getLookupOrder(qualifier, null)).containsExactly(defaultOrder);
 	}
 
+	@Test
 	public void testGetWithNodes() {
 		IPreferencesService service = Platform.getPreferencesService();
 		String qualifier = getUniqueString();
@@ -391,6 +337,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertEquals("8.7", defaultValue, actual);
 	}
 
+	@Test
 	public void testSearchingStringBasics() {
 		IPreferencesService service = Platform.getPreferencesService();
 		String qualifier = getUniqueString();
@@ -447,8 +394,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		String[] setOrder = new String[] {TestScope.SCOPE, DefaultScope.SCOPE};
 		service.setDefaultLookupOrder(qualifier, null, setOrder);
 		String[] order = service.getLookupOrder(qualifier, null);
-		assertNotNull("6.0", order);
-		assertEquals("6.1", setOrder, order);
+		assertThat(order).containsExactly(setOrder);
 
 		// get the value, should be the real one
 		for (int i = 0; i < contexts.length; i++) {
@@ -461,8 +407,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		setOrder = new String[] {DefaultScope.SCOPE, TestScope.SCOPE};
 		service.setDefaultLookupOrder(qualifier, key, setOrder);
 		order = service.getLookupOrder(qualifier, key);
-		assertNotNull("8.0", order);
-		assertEquals("8.1", setOrder, order);
+		assertThat(order).containsExactly(setOrder);
 
 		// get the value, should be the default one
 		for (int i = 0; i < contexts.length; i++) {
@@ -472,12 +417,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		}
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		super.tearDown();
-		Platform.getPreferencesService().getRootNode().node(TestScope.SCOPE).removeNode();
-	}
-
+	@Test
 	public void testGet() {
 		IPreferencesService service = Platform.getPreferencesService();
 		String qualifier = getUniqueString();
@@ -519,19 +459,16 @@ public class PreferencesServiceTest extends RuntimeTest {
 		assertEquals("10.0", searchPath, service.getString(qualifier, searchPath, null, null));
 	}
 
+	@Test
 	public void testImportExceptions() {
 		// importing an empty file is an error (invalid file format)
 		IPreferencesService service = Platform.getPreferencesService();
 		InputStream input = new BufferedInputStream(new ByteArrayInputStream(new byte[0]));
-		try {
-			service.importPreferences(input);
-			fail("0.0");
-		} catch (CoreException e) {
-			// expected
-		}
+		assertThrows(CoreException.class, () -> service.importPreferences(input));
 	}
 
-	public void testImportLegacy() {
+	@Test
+	public void testImportLegacy() throws Exception {
 		IPreferencesService service = Platform.getPreferencesService();
 		String[] qualifiers = new String[] {getUniqueString() + 1, getUniqueString() + 2};
 		String[] oldKeys = new String[] {getUniqueString() + 3, getUniqueString() + 4};
@@ -541,11 +478,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 
 		// nodes shouldn't exist
 		for (String qualifier : qualifiers) {
-			try {
-				assertTrue("1.0", !node.nodeExists(qualifier));
-			} catch (BackingStoreException e) {
-				fail("1.99", e);
-			}
+			assertTrue("1.0", !node.nodeExists(qualifier));
 		}
 
 		// store some values
@@ -563,10 +496,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 		}
 
 		// import a legacy file
-		try {
-			service.importPreferences(getLegacyExportFile(qualifiers, newKeys));
-		} catch (CoreException e) {
-			fail("3.0", e);
+		try (InputStream input = getLegacyExportFile(qualifiers, newKeys)) {
+			service.importPreferences(input);
 		}
 
 		// old values shouldn't exist anymore
@@ -582,7 +513,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 		}
 	}
 
-	private InputStream getLegacyExportFile(String[] qualifiers, String[] keys) {
+	private InputStream getLegacyExportFile(String[] qualifiers, String[] keys) throws IOException {
 		Properties properties = new Properties();
 		for (String qualifier : qualifiers) {
 			// version id
@@ -591,19 +522,10 @@ public class PreferencesServiceTest extends RuntimeTest {
 				properties.put(qualifier + IPath.SEPARATOR + key, getUniqueString());
 			}
 		}
-		ByteArrayOutputStream output = new ByteArrayOutputStream();
-		try {
+		try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
 			properties.store(output, null);
-		} catch (IOException e) {
-			fail("#getLegacyExportFile", e);
-		} finally {
-			try {
-				output.close();
-			} catch (IOException e) {
-				// ignore
-			}
+			return new ByteArrayInputStream(output.toByteArray());
 		}
-		return new ByteArrayInputStream(output.toByteArray());
 	}
 
 	/*
@@ -612,7 +534,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * - export the parent
 	 * - don't expect anything to be exported
 	 */
-	public void testExportExcludes1() {
+	@Test
+	public void testExportExcludes1() throws Exception {
 
 		// add some random key/value pairs
 		String qualifier = getUniqueString();
@@ -641,7 +564,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * - nothing in the excludes list
 	 * - expect that k/v pair to be in the file
 	 */
-	public void testExportExcludes2() {
+	@Test
+	public void testExportExcludes2() throws Exception {
 		String qualifier = getUniqueString();
 		IEclipsePreferences node = new TestScope().getNode(qualifier);
 		String key = getUniqueString();
@@ -661,7 +585,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * - add one of them to the excludes list
 	 * - expect only the other key to exist
 	 */
-	public void testExportExcludes3() {
+	@Test
+	public void testExportExcludes3() throws Exception {
 		String qualifier = getUniqueString();
 		IEclipsePreferences node = new TestScope().getNode(qualifier);
 		String k1 = "a";
@@ -688,7 +613,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * - export containing non-matching string
 	 * - expect all k/v pairs
 	 */
-	public void testExportExcludes4() {
+	@Test
+	public void testExportExcludes4() throws Exception {
 		String qualifier = getUniqueString();
 		IEclipsePreferences node = new TestScope().getNode(qualifier);
 		String k1 = "a";
@@ -710,6 +636,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 	/**
 	 * Tests a default preference value set by a preference initializer extension.
 	 */
+	@Test
 	public void testDefaultFromInitializer() {
 		String value = Platform.getPreferencesService().getString(RuntimeTestsPlugin.PI_RUNTIME_TESTS, TestInitializer.DEFAULT_PREF_KEY, null, null);
 		assertEquals("1.0", TestInitializer.DEFAULT_PREF_VALUE, value);
@@ -718,7 +645,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	/*
 	 * - exporting default values shouldn't do anything
 	 */
-	public void testExportDefaults() {
+	@Test
+	public void testExportDefaults() throws Exception {
 		String qualifier = getUniqueString();
 		IEclipsePreferences node = DefaultScope.INSTANCE.getNode(qualifier);
 		for (int i = 0; i < 10; i++) {
@@ -735,6 +663,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * - export parent
 	 * - expect all values to be exported but that one
 	 */
+	@Test
 	public void testExportExcludes5() {
 		String qualifier = getUniqueString();
 		IEclipsePreferences node = new TestScope().getNode(qualifier);
@@ -758,10 +687,12 @@ public class PreferencesServiceTest extends RuntimeTest {
 	}
 
 	/**
-	 * @deprecated this tests deprecated functions, so deprecation added to avoid warnings
+	 * @deprecated this tests deprecated functions, so deprecation added to avoid
+	 *             warnings
 	 */
 	@Deprecated
-	public void testValidateVersions() {
+	@Test
+	public void testValidateVersions() throws Exception {
 		final char BUNDLE_VERSION_PREFIX = '@';
 
 		// ensure that there is at least one value in the prefs
@@ -769,56 +700,28 @@ public class PreferencesServiceTest extends RuntimeTest {
 		scopeRoot.node("org.eclipse.core.tests.runtime").put("key", "value");
 
 		// no errors if the file doesn't exist
-		IPath path = getRandomLocation();
+		IPath path = FileSystemHelper.getRandomLocation();
 		IStatus result = org.eclipse.core.runtime.Preferences.validatePreferenceVersions(path);
 		assertTrue("1.0", result.isOK());
 
 		// an empty file wasn't written by #export so its an invalid file format
 		// NOTE: this changed from "do nothing" to being an error in Eclipse 3.1
 		Properties properties = new Properties();
-		OutputStream output = null;
-		try {
-			output = new FileOutputStream(path.toFile());
+		try (OutputStream output = new FileOutputStream(path.toFile())) {
 			properties.store(output, null);
-		} catch (IOException e) {
-			fail("2.0", e);
-		} finally {
-			if (output != null) {
-				try {
-					output.close();
-				} catch (IOException e) {
-					// ignore
-				}
-			}
 		}
 		result = org.eclipse.core.runtime.Preferences.validatePreferenceVersions(path);
 		assertTrue("2.0", !result.isOK());
 
 		// no errors for a file which we write out right now
-		try {
-			org.eclipse.core.runtime.Preferences.exportPreferences(path);
-		} catch (CoreException e) {
-			fail("3.0", e);
-		}
+		org.eclipse.core.runtime.Preferences.exportPreferences(path);
 		result = org.eclipse.core.runtime.Preferences.validatePreferenceVersions(path);
 		assertTrue("3.1", result.isOK());
 
 		// warning for old versions
 		properties = new Properties();
-		InputStream input = null;
-		try {
-			input = new FileInputStream(path.toFile());
+		try (InputStream input = Files.newInputStream(path.toPath())) {
 			properties.load(input);
-		} catch (IOException e) {
-			fail("4.0", e);
-		} finally {
-			if (input != null) {
-				try {
-					input.close();
-				} catch (IOException e) {
-					// ignore
-				}
-			}
 		}
 		// change all version numbers to "0" so the validation will fail
 		for (Enumeration<Object> e = properties.keys(); e.hasMoreElements();) {
@@ -827,38 +730,23 @@ public class PreferencesServiceTest extends RuntimeTest {
 				properties.put(key, "0");
 			}
 		}
-		output = null;
-		try {
-			output = new FileOutputStream(path.toFile());
+		try (OutputStream output = Files.newOutputStream(path.toPath())) {
 			properties.store(output, null);
-		} catch (IOException e) {
-			fail("4.1", e);
-		} finally {
-			if (output != null) {
-				try {
-					output.close();
-				} catch (IOException e) {
-					// ignore
-				}
-			}
 		}
 		result = org.eclipse.core.runtime.Preferences.validatePreferenceVersions(path);
 		assertTrue("4.2", !result.isOK());
 
 	}
 
-	public void testMatches() {
+	@Test
+	public void testMatches() throws CoreException {
 		IPreferencesService service = Platform.getPreferencesService();
 		IPreferenceFilter[] matching = null;
 		final String QUALIFIER = getUniqueString();
 
 		// an empty transfer list matches nothing
-		try {
-			matching = service.matches(service.getRootNode(), new IPreferenceFilter[0]);
-		} catch (CoreException e) {
-			fail("1.00", e);
-		}
-		assertEquals("1.1", 0, matching.length);
+		matching = service.matches(service.getRootNode(), new IPreferenceFilter[0]);
+		assertThat(matching).isEmpty();
 
 		// don't match this filter
 		IPreferenceFilter filter = new IPreferenceFilter() {
@@ -874,45 +762,25 @@ public class PreferencesServiceTest extends RuntimeTest {
 				return new String[] {InstanceScope.SCOPE};
 			}
 		};
-		try {
-			matching = service.matches(service.getRootNode(), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("2.00", e);
-		}
-		assertEquals("2.1", 0, matching.length);
+		matching = service.matches(service.getRootNode(), new IPreferenceFilter[] { filter });
+		assertThat(matching).isEmpty();
 
 		// shouldn't match since there are no key/value pairs in the node
-		try {
-			matching = service.matches(service.getRootNode(), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("3.00", e);
-		}
-		assertEquals("3.0", 0, matching.length);
+		matching = service.matches(service.getRootNode(), new IPreferenceFilter[] { filter });
+		assertThat(matching).isEmpty();
 
 		// add some values so it does match
 		InstanceScope.INSTANCE.getNode(QUALIFIER).put("key", "value");
-		try {
-			matching = service.matches(service.getRootNode(), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("3.00", e);
-		}
-		assertEquals("3.1", 1, matching.length);
+		matching = service.matches(service.getRootNode(), new IPreferenceFilter[] { filter });
+		assertThat(matching).hasSize(1);
 
 		// should match on the exact node too
-		try {
-			matching = service.matches(InstanceScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("4.00", e);
-		}
-		assertEquals("4.1", 1, matching.length);
+		matching = service.matches(InstanceScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] { filter });
+		assertThat(matching).hasSize(1);
 
 		// shouldn't match a different scope
-		try {
-			matching = service.matches(ConfigurationScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("5.00", e);
-		}
-		assertEquals("5.1", 0, matching.length);
+		matching = service.matches(ConfigurationScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] { filter });
+		assertThat(matching).isEmpty();
 
 		// try matching on the root node for a filter which matches all nodes in the scope
 		filter = new IPreferenceFilter() {
@@ -926,27 +794,20 @@ public class PreferencesServiceTest extends RuntimeTest {
 				return new String[] {InstanceScope.SCOPE};
 			}
 		};
-		try {
-			matching = service.matches(InstanceScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("6.0", e);
-		}
-		assertEquals("6.1", 1, matching.length);
+		matching = service.matches(InstanceScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] { filter });
+		assertThat(matching).hasSize(1);
 
 		// shouldn't match
-		try {
-			matching = service.matches(ConfigurationScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] {filter});
-		} catch (CoreException e) {
-			fail("7.0", e);
-		}
-		assertEquals("7.1", 0, matching.length);
+		matching = service.matches(ConfigurationScope.INSTANCE.getNode(QUALIFIER), new IPreferenceFilter[] { filter });
+		assertThat(matching).isEmpty();
 	}
 
 	/*
 	 * See bug 95608 - A node should match if it has any keys OR has a child node
 	 * with keys.
 	 */
-	public void testMatches2() {
+	@Test
+	public void testMatches2() throws CoreException {
 		IPreferencesService service = Platform.getPreferencesService();
 		final String QUALIFIER = getUniqueString();
 
@@ -965,14 +826,11 @@ public class PreferencesServiceTest extends RuntimeTest {
 				return new String[] {InstanceScope.SCOPE};
 			}
 		}};
-		try {
-			assertEquals("1.0", 1, service.matches(service.getRootNode(), filters).length);
-		} catch (CoreException e) {
-			fail("0.0", e);
-		}
+		assertThat(service.matches(service.getRootNode(), filters)).hasSize(1);
 	}
 
-	public void testExportWithTransfers1() {
+	@Test
+	public void testExportWithTransfers1() throws Exception {
 
 		final String VALID_QUALIFIER = getUniqueString();
 		IPreferenceFilter transfer = new IPreferenceFilter() {
@@ -1014,7 +872,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * Test exporting with a transfer that returns null for the mapping. This means
 	 * export everything in the scope.
 	 */
-	public void testExportWithTransfers2() {
+	@Test
+	public void testExportWithTransfers2() throws Exception {
 		final String VALID_QUALIFIER = getUniqueString();
 		IPreferenceFilter transfer = new IPreferenceFilter() {
 			@Override
@@ -1044,11 +903,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 			}
 			return true;
 		};
-		try {
-			((IEclipsePreferences) service.getRootNode().node(TestScope.SCOPE)).accept(visitor);
-		} catch (BackingStoreException e) {
-			fail("2.00", e);
-		}
+		((IEclipsePreferences) service.getRootNode().node(TestScope.SCOPE)).accept(visitor);
 		verifier.addVersion();
 		verifier.addExportRoot(service.getRootNode());
 
@@ -1064,7 +919,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * When you specify a transfer with children, you should export it even if the
 	 * parent doesn't have any key/value pairs.
 	 */
-	public void testExportWithTransfers3() {
+	@Test
+	public void testExportWithTransfers3() throws Exception {
 
 		final String QUALIFIER = getUniqueString();
 		IPreferenceFilter transfer = new IPreferenceFilter() {
@@ -1107,7 +963,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * Since 3.6 preferenceTransfer allows to define common prefix for group of
 	 * preferences
 	 */
-	public void testExportWithTransfers4() {
+	@Test
+	public void testExportWithTransfers4() throws Exception {
 		final String VALID_QUALIFIER = getUniqueString();
 		final String COMMON_PREFIX = "PREFIX.";
 		IPreferenceFilter transfer = new IPreferenceFilter() {
@@ -1140,12 +997,8 @@ public class PreferencesServiceTest extends RuntimeTest {
 		node.put(VALID_KEY_3, "value3");
 		node.put(VALID_KEY_4, "value4");
 
-		try {
-			matching = service.matches(service.getRootNode(), new IPreferenceFilter[] {transfer});
-		} catch (CoreException e) {
-			fail("1.00", e);
-		}
-		assertEquals("2.00", 1, matching.length);
+		matching = service.matches(service.getRootNode(), new IPreferenceFilter[] { transfer });
+		assertThat(matching).hasSize(1);
 
 		ExportVerifier verifier = new ExportVerifier(service.getRootNode(), new IPreferenceFilter[] {transfer});
 		verifier.addVersion();
@@ -1153,7 +1006,6 @@ public class PreferencesServiceTest extends RuntimeTest {
 		verifier.addExpected(node.absolutePath(), VALID_KEY_1);
 		verifier.addExpected(node.absolutePath(), VALID_KEY_2);
 		verifier.verify();
-
 	}
 
 	/**
@@ -1174,6 +1026,7 @@ public class PreferencesServiceTest extends RuntimeTest {
 	 * For more details see bug 418046:
 	 * https://bugs.eclipse.org/bugs/show_bug.cgi?id=418046
 	 */
+	@Test
 	public void testApplyAndExportedPreferencesNotModified() throws BackingStoreException, CoreException {
 		// create a dummy node and export it to a stream
 		IEclipsePreferences toExport = InstanceScope.INSTANCE.getNode("bug418046");
@@ -1207,22 +1060,28 @@ public class PreferencesServiceTest extends RuntimeTest {
 		}
 		String debugString = ((EclipsePreferences) node).toDeepDebugString();
 		String[] children = node.childrenNames();
-		assertEquals(debugString, 1, children.length);
+		assertThat(children).as(debugString).hasSize(1);
 
 		assertEquals(InstanceScope.SCOPE, children[0]);
 		node = node.node(children[0]);
 		children = node.childrenNames();
-		assertEquals(debugString, 1, children.length);
+		assertThat(children).as(debugString).hasSize(1);
 
 		assertEquals("bug418046", children[0]);
 		node = node.node(children[0]);
 		children = node.childrenNames();
-		assertEquals(debugString, 0, children.length);
+		assertThat(children).as(debugString).isEmpty();
 
 		assertEquals(debugString, "someValue", node.get("someKey", null));
 	}
 
+	@Test
+	@Disabled("not implemented yet")
 	public void testApplyWithTransfers() {
-		// todo
 	}
+
+	private static String getUniqueString() {
+		return UUID.randomUUID().toString();
+	}
+
 }

@@ -25,14 +25,39 @@ import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.text.MessageFormat;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import org.eclipse.core.filesystem.EFS;
 import org.eclipse.core.filesystem.IFileStore;
 import org.eclipse.core.filesystem.URIUtil;
-import org.eclipse.core.internal.events.*;
+import org.eclipse.core.internal.events.BuildManager;
+import org.eclipse.core.internal.events.ILifecycleListener;
+import org.eclipse.core.internal.events.LifecycleEvent;
+import org.eclipse.core.internal.events.NotificationManager;
+import org.eclipse.core.internal.events.ResourceChangeEvent;
+import org.eclipse.core.internal.events.ResourceComparator;
 import org.eclipse.core.internal.localstore.FileSystemResourceManager;
 import org.eclipse.core.internal.preferences.PreferencesService;
 import org.eclipse.core.internal.properties.IPropertyManager;
@@ -40,12 +65,64 @@ import org.eclipse.core.internal.properties.PropertyManager2;
 import org.eclipse.core.internal.refresh.RefreshManager;
 import org.eclipse.core.internal.resources.ComputeProjectOrder.Digraph;
 import org.eclipse.core.internal.resources.ComputeProjectOrder.VertexOrder;
-import org.eclipse.core.internal.utils.*;
-import org.eclipse.core.internal.watson.*;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.resources.team.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.runtime.jobs.*;
+import org.eclipse.core.internal.utils.BitMask;
+import org.eclipse.core.internal.utils.Messages;
+import org.eclipse.core.internal.utils.Policy;
+import org.eclipse.core.internal.utils.StringPoolJob;
+import org.eclipse.core.internal.watson.ElementTree;
+import org.eclipse.core.internal.watson.ElementTreeIterator;
+import org.eclipse.core.internal.watson.IElementContentVisitor;
+import org.eclipse.core.resources.IBuildConfiguration;
+import org.eclipse.core.resources.IContainer;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IFileModificationValidator;
+import org.eclipse.core.resources.IFilterMatcherDescriptor;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IPathVariableManager;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IProjectDescription;
+import org.eclipse.core.resources.IProjectNatureDescriptor;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IResourceChangeEvent;
+import org.eclipse.core.resources.IResourceChangeListener;
+import org.eclipse.core.resources.IResourceRuleFactory;
+import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.ISaveContext;
+import org.eclipse.core.resources.ISaveParticipant;
+import org.eclipse.core.resources.ISavedState;
+import org.eclipse.core.resources.ISynchronizer;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.IWorkspaceDescription;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IWorkspaceRunnable;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.resources.ProjectScope;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.resources.team.FileModificationValidationContext;
+import org.eclipse.core.resources.team.FileModificationValidator;
+import org.eclipse.core.resources.team.IMoveDeleteHook;
+import org.eclipse.core.resources.team.TeamHook;
+import org.eclipse.core.runtime.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IConfigurationElement;
+import org.eclipse.core.runtime.ICoreRunnable;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.ISafeRunnable;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.NullProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.PlatformObject;
+import org.eclipse.core.runtime.Plugin;
+import org.eclipse.core.runtime.SafeRunner;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.jobs.ISchedulingRule;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobGroup;
+import org.eclipse.core.runtime.jobs.MultiRule;
 import org.eclipse.core.runtime.preferences.IEclipsePreferences;
 import org.eclipse.core.runtime.preferences.InstanceScope;
 import org.eclipse.osgi.util.NLS;
@@ -109,7 +186,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 	protected ContentDescriptionManager contentDescriptionManager;
 	/** indicates if the workspace crashed in a previous session */
 	protected boolean crashed = false;
-	protected final IWorkspaceRoot defaultRoot = new WorkspaceRoot(Path.ROOT, this);
+	protected final IWorkspaceRoot defaultRoot = new WorkspaceRoot(IPath.ROOT, this);
 	protected WorkspacePreferences description;
 	protected FileSystemResourceManager fileSystemManager;
 	protected final CopyOnWriteArrayList<ILifecycleListener> lifecycleListeners = new CopyOnWriteArrayList<>();
@@ -1181,7 +1258,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 			if (!source.getProject().equals(dest.getProject())) {
 				String variable = srcRawLoc.segment(0);
 				variable = copyVariable(source, dest, variable);
-				IPath newLocation = Path.fromPortableString(variable).append(srcRawLoc.removeFirstSegments(1));
+				IPath newLocation = IPath.fromPortableString(variable).append(srcRawLoc.removeFirstSegments(1));
 				sourceURI = toURI(newLocation);
 			} else {
 				sourceURI = toURI(srcRawLoc);
@@ -1264,7 +1341,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 					} else
 						result.append(segment);
 				}
-				srcValue = Path.fromPortableString(result.toString());
+				srcValue = IPath.fromPortableString(result.toString());
 			}
 		}
 		if (shouldConvertToRelative) {
@@ -1322,7 +1399,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 	 * be immediately made derived, hidden and/or team private
 	 */
 	public ResourceInfo createResource(IResource resource, int updateFlags) throws CoreException {
-		ResourceInfo info = createResource(resource, null, false, false, false);
+		ResourceInfo info = createResource(resource, null, false, BitMask.isSet(updateFlags, IResource.REPLACE), false);
 		if ((updateFlags & IResource.DERIVED) != 0)
 			info.set(M_DERIVED);
 		if ((updateFlags & IResource.TEAM_PRIVATE) != 0)
@@ -1465,7 +1542,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 	 */
 	void deleteResource(IResource resource) {
 		IPath path = resource.getFullPath();
-		if (path.equals(Path.ROOT)) {
+		if (path.equals(IPath.ROOT)) {
 			IProject[] children = getRoot().getProjects(IContainer.INCLUDE_HIDDEN);
 			for (IProject element : children)
 				tree.deleteElement(element.getFullPath());
@@ -1868,15 +1945,10 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 	 */
 	private void initializePreferenceLookupOrder() throws CoreException {
 		PreferencesService service = PreferencesService.getDefault();
-		String[] original = service.getDefaultDefaultLookupOrder();
-		List<String> newOrder = new ArrayList<>();
 		// put the project scope first on the list
-		newOrder.add(ProjectScope.SCOPE);
-		newOrder.addAll(Arrays.asList(original));
-		service.setDefaultDefaultLookupOrder(newOrder.toArray(new String[newOrder.size()]));
+		service.prependScopeToDefaultDefaultLookupOrder(ProjectScope.SCOPE);
 		Preferences node = service.getRootNode().node(ProjectScope.SCOPE);
-		if (node instanceof ProjectPreferences) {
-			ProjectPreferences projectPreferences = (ProjectPreferences) node;
+		if (node instanceof ProjectPreferences projectPreferences) {
 			projectPreferences.setWorkspace(this);
 		} else {
 			throw new CoreException(Status.error(MessageFormat.format(
@@ -2250,8 +2322,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 		// create root location
 		localMetaArea.locationFor(getRoot()).toFile().mkdirs();
 
-		SubMonitor subMonitor = SubMonitor.convert(null);
-		startup(subMonitor);
+		startup(new NullProgressMonitor());
 		// restart the notification manager so it is initialized with the right tree
 		notificationManager.startup(null);
 		openFlag = true;
@@ -2260,7 +2331,8 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 				refreshManager.refresh(getRoot());
 			} catch (RuntimeException e) {
 				//don't fail entire open if refresh failed, just report as warning
-				return new ResourceStatus(IResourceStatus.INTERNAL_ERROR, Path.ROOT, Messages.resources_errorMultiRefresh, e);
+				return new ResourceStatus(IResourceStatus.INTERNAL_ERROR, IPath.ROOT,
+						Messages.resources_errorMultiRefresh, e);
 			}
 		}
 		//finally register a string pool participant
@@ -2316,11 +2388,14 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 	}
 
 	/**
-	 * Called before checking the pre-conditions of an operation.  Optionally supply
-	 * a scheduling rule to determine when the operation is safe to run.  If a scheduling
-	 * rule is supplied, this method will block until it is safe to run.
+	 * Called before checking the pre-conditions of an operation. Optionally supply
+	 * a scheduling rule to determine when the operation is safe to run. If a
+	 * scheduling rule is supplied, this method will block until it is safe to run.
+	 * Even if no scheduling is supplied this method blocks until no other workspace
+	 * operation concurrently runs.
 	 *
-	 * @param rule the scheduling rule that describes what this operation intends to modify.
+	 * @param rule the scheduling rule that describes what this operation intends to
+	 *             modify.
 	 */
 	public void prepareOperation(ISchedulingRule rule, IProgressMonitor monitor) throws CoreException {
 		try {
@@ -2579,7 +2654,7 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 			buffer.append("\n  " + requestor.requestPath() + ": " + elementContents); //$NON-NLS-1$ //$NON-NLS-2$
 			return true;
 		};
-		new ElementTreeIterator(tree, Path.ROOT).iterate(visitor);
+		new ElementTreeIterator(tree, IPath.ROOT).iterate(visitor);
 		return buffer.toString();
 	}
 
@@ -2720,5 +2795,93 @@ public class Workspace extends PlatformObject implements IWorkspace, ICoreConsta
 			// if we can't validate it, we return OK
 		}
 		return Status.OK_STATUS;
+	}
+
+	@Override
+	public void write(Map<IFile, byte[]> contentMap, boolean force, boolean derived, boolean keepHistory,
+			IProgressMonitor monitor, ExecutorService executorService) throws CoreException {
+		Objects.requireNonNull(contentMap);
+		ConcurrentMap<File, byte[]> filesToCreate = new ConcurrentHashMap<>(contentMap.size());
+		ConcurrentMap<File, byte[]> filesToReplace = new ConcurrentHashMap<>(contentMap.size());
+		int updateFlags = (derived ? IResource.DERIVED : IResource.NONE) | (force ? IResource.FORCE : IResource.NONE)
+				| (keepHistory ? IResource.KEEP_HISTORY : IResource.NONE);
+		int createFlags = (force ? IResource.FORCE : IResource.NONE) | (derived ? IResource.DERIVED : IResource.NONE);
+		SubMonitor subMon = SubMonitor.convert(monitor, contentMap.size());
+		for (Entry<IFile, byte[]> e : contentMap.entrySet()) {
+			IFile file = Objects.requireNonNull(e.getKey());
+			byte[] content = Objects.requireNonNull(e.getValue());
+			if (file.exists()) {
+				if (file instanceof File f) {
+					filesToReplace.put(f, content);
+				} else {
+					file.setContents(content, updateFlags, subMon.split(1));
+				}
+			} else {
+				if (file instanceof File f) {
+					filesToCreate.put(f, content);
+				} else {
+					file.create(content, createFlags, subMon.split(1));
+				}
+			}
+		}
+		for (Entry<File, byte[]> e : filesToReplace.entrySet()) {
+			File file = e.getKey();
+			byte[] content = e.getValue();
+			file.setContents(content, updateFlags, subMon.split(1));
+		}
+		createMultiple(filesToCreate, createFlags, subMon.split(filesToCreate.size()), executorService);
+	}
+
+	/** @see File#create(byte[], int, IProgressMonitor) **/
+	private void createMultiple(ConcurrentMap<File, byte[]> filesToCreate, int updateFlags, IProgressMonitor monitor,
+			ExecutorService executorService) throws CoreException {
+		if (filesToCreate.isEmpty()) {
+			return;
+		}
+		Set<File> files = filesToCreate.keySet();
+		for (File file : files) {
+			file.checkValidPath(file.path, IResource.FILE, true);
+		}
+
+		IPath name = files.iterator().next().getFullPath(); // XXX any name
+		SubMonitor subMonitor = SubMonitor.convert(monitor, NLS.bind(Messages.resources_creating, name), 1);
+		try {
+			ISchedulingRule rule = MultiRule
+					.combine(files.stream().map(getRuleFactory()::createRule).toArray(ISchedulingRule[]::new));
+			NullProgressMonitor npm = new NullProgressMonitor();
+			try {
+				prepareOperation(rule, npm);
+				for (File file : files) {
+					file.checkCreatable();
+				}
+				beginOperation(true);
+				try {
+					File.internalSetMultipleContents(filesToCreate, updateFlags, false, subMonitor.newChild(1),
+							executorService);
+				} catch (CoreException | OperationCanceledException e) {
+					// CoreException when a problem happened creating a file on disk
+					// OperationCanceledException when the operation of setting contents has been
+					// canceled
+					// In either case delete from the workspace and disk
+					for (File file : files) {
+						try {
+							deleteResource(file);
+							IFileStore store = file.getStore();
+							store.delete(EFS.NONE, null);
+						} catch (Exception e2) {
+							e.addSuppressed(e);
+						}
+					}
+					throw e;
+				}
+			} catch (OperationCanceledException e) {
+				getWorkManager().operationCanceled();
+				throw e;
+			} finally {
+				endOperation(rule, true);
+			}
+		} finally {
+			subMonitor.done();
+		}
 	}
 }

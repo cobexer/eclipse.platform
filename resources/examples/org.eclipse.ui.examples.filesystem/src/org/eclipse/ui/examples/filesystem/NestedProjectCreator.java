@@ -25,7 +25,6 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.operation.IRunnableContext;
-import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Shell;
@@ -68,18 +67,9 @@ public class NestedProjectCreator {
 		}
 	}
 
-	/**
-	 * @throws InvocationTargetException
-	 * @throws InterruptedException
-	 */
 	private void doCreateNestedProjects(final IProject[] projects, Shell shell) throws InvocationTargetException, InterruptedException {
 		final Object[] result = new Object[1];
-		context.run(true, true, new IRunnableWithProgress() {
-			@Override
-			public void run(IProgressMonitor monitor) {
-				result[0] = findNestedProjects(projects);
-			}
-		});
+		context.run(true, true, monitor -> result[0] = findNestedProjects(projects));
 		if (result[0] == null)
 			return;
 		IProjectDescription[] rawDescriptions = (IProjectDescription[]) result[0];
@@ -115,8 +105,6 @@ public class NestedProjectCreator {
 	/**
 	 * The given project is about to be created.  Exclude any corresponding
 	 * resources in an overlapping parent project.
-	 * @param project
-	 * @param description
 	 */
 	protected void excludeOverlap(IProjectDescription description) throws CoreException {
 		URI location = description.getLocationURI();
@@ -163,10 +151,6 @@ public class NestedProjectCreator {
 				continue;
 			try {
 				projects[i].accept(new IResourceProxyVisitor() {
-					/**
-					 * @param descriptions
-					 * @param description
-					 */
 					private void addDescription(final ArrayList<IProjectDescription> descriptions, IProjectDescription description) {
 						IProject project = workspace.getRoot().getProject(description.getName());
 						if (!project.exists())
@@ -177,8 +161,6 @@ public class NestedProjectCreator {
 					 * This linked resource may be blocking resources in the project's
 					 * location from the workspace.  Search for project descriptions
 					 * in the sub-tree of the project location corresponding to this resource.
-					 * @param link
-					 * @param descriptions
 					 */
 					private void searchInLink(IResource link) {
 						IProject project = link.getProject();
@@ -199,8 +181,6 @@ public class NestedProjectCreator {
 					/**
 					 * Searches for project description files within the given store,
 					 * and adds any found descriptions to the supplied list.
-					 * @param store
-					 * @param descriptions
 					 */
 					private void searchInStore(IFileStore store) {
 						try {
@@ -259,8 +239,8 @@ public class NestedProjectCreator {
 	 */
 	private ILabelProvider getProjectDescriptionLabelProvider() {
 		return new LabelProvider() {
-			private LabelProvider realProvider = new WorkbenchLabelProvider();
-			private IWorkspaceRoot root = workspace.getRoot();
+			private final LabelProvider realProvider = new WorkbenchLabelProvider();
+			private final IWorkspaceRoot root = workspace.getRoot();
 
 			@Override
 			public Image getImage(Object element) {

@@ -66,7 +66,7 @@ public class PathTree {
 		}
 	}
 
-	private Map<IPath, Node> objects = new HashMap<>();
+	private final Map<IPath, Node> objects = new HashMap<>();
 
 	/**
 	 * Return the object at the given path or <code>null</code>
@@ -128,7 +128,6 @@ public class PathTree {
 
 	/**
 	 * Return whether the given path has children in the tree
-	 * @param path
 	 * @return whether there are children for the given path
 	 */
 	public synchronized boolean hasChildren(IPath path) {

@@ -13,10 +13,10 @@
  *******************************************************************************/
 package org.eclipse.update.internal.configurator.branding;
 
-import java.net.*;
+import java.net.URL;
 import java.util.Hashtable;
 
-import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.IPath;
 
 
 /**
@@ -32,7 +32,7 @@ public final class AboutInfo {
 	private final static String PROPERTIES_FILENAME = "about.properties"; //$NON-NLS-1$
 	private final static String MAPPINGS_FILENAME = "about.mappings"; //$NON-NLS-1$
 
-	private String featureId;
+	private final String featureId;
 	private String versionId = ""; //$NON-NLS-1$
 	private String featurePluginLabel;
 	private String providerName;
@@ -125,7 +125,7 @@ public final class AboutInfo {
 	 */
 	public String getFeatureImageName() {
 		if (featureImageURL != null) {
-			IPath path = new Path(featureImageURL.getPath());
+			IPath path = IPath.fromOSString(featureImageURL.getPath());
 			return path.lastSegment();
 		} 
 		return null;

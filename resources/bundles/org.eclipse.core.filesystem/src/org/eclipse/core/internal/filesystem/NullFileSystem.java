@@ -14,10 +14,11 @@
 package org.eclipse.core.internal.filesystem;
 
 import java.net.URI;
-import org.eclipse.core.filesystem.*;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.IFileSystem;
 import org.eclipse.core.filesystem.provider.FileSystem;
 import org.eclipse.core.runtime.IPath;
-import org.eclipse.core.runtime.Path;
 
 /**
  * The null file system.
@@ -28,7 +29,7 @@ public class NullFileSystem extends FileSystem {
 	/**
 	 * The singleton instance of this file system.
 	 */
-	private static IFileSystem instance;
+	private static final IFileSystem INSTANCE = EFS.getNullFileSystem();
 
 	/**
 	 * Returns the instance of this file system
@@ -36,7 +37,7 @@ public class NullFileSystem extends FileSystem {
 	 * @return The instance of this file system.
 	 */
 	public static IFileSystem getInstance() {
-		return instance;
+		return INSTANCE;
 	}
 
 	/**
@@ -44,7 +45,6 @@ public class NullFileSystem extends FileSystem {
 	 */
 	public NullFileSystem() {
 		super();
-		instance = this;
 	}
 
 	@Override
@@ -54,6 +54,6 @@ public class NullFileSystem extends FileSystem {
 
 	@Override
 	public IFileStore getStore(URI uri) {
-		return new NullFileStore(new Path(uri.getPath()));
+		return new NullFileStore(IPath.fromOSString(uri.getPath()));
 	}
 }

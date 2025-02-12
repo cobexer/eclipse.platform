@@ -14,80 +14,87 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.builders;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.setAutoBuilding;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.updateProjectDescription;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import java.util.List;
 import org.eclipse.core.internal.resources.Workspace;
-import org.eclipse.core.resources.*;
-import org.junit.FixMethodOrder;
-import org.junit.runners.MethodSorters;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IWorkspaceDescription;
+import org.eclipse.core.resources.IncrementalProjectBuilder;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * This class tests builder behavior related to re-building
  */
-@FixMethodOrder(MethodSorters.NAME_ASCENDING)
-public class RebuildTest extends AbstractBuilderTest {
-
+@ExtendWith(WorkspaceResetExtension.class)
+@TestMethodOrder(MethodOrderer.MethodName.class)
+public class RebuildTest {
 	final String builderName = RebuildingBuilder.BUILDER_NAME;
-	private final int maxBuildIterations;
+	private int maxBuildIterations;
+	private String testName;
 
-	public RebuildTest(String name) {
-		super(name);
+	@BeforeEach
+	public void setUp(TestInfo testInfo) throws CoreException {
 		maxBuildIterations = getWorkspace().getDescription().getMaxBuildIterations();
-	}
-
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		getWorkspace().getRoot().delete(true, null);
+		testName = testInfo.getTestMethod().get().getName();
 		// Turn auto-building off
 		setAutoBuilding(false);
 		boolean earlyExitAllowed = ((Workspace) getWorkspace()).getBuildManager()
 				.isEarlyExitFromBuildLoopAllowed();
-		assertFalse("early exit shouldn't be set", earlyExitAllowed);
+		assertFalse(earlyExitAllowed, "early exit shouldn't be set");
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
-		getWorkspace().getRoot().delete(true, null);
+	@AfterEach
+	public void tearDown() throws CoreException {
 		IWorkspaceDescription description = getWorkspace().getDescription();
 		description.setMaxBuildIterations(maxBuildIterations);
 		getWorkspace().setDescription(description);
 		RebuildingBuilder.getInstances().clear();
 		allowEarlyBuildLoopExit(false);
-		super.tearDown();
 	}
 
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with a single project
 	 */
+	@Test
 	public void testSingleProjectPropagationAndNoOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project = getWorkspace().getRoot().getProject(getName());
+		IProject project = getWorkspace().getRoot().getProject(testName);
 
 		// Create and open a project
-		project.create(getMonitor());
-		project.open(getMonitor());
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-		project.setDescription(desc, getMonitor());
+		updateProjectDescription(project).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Confirm basic functionality first - one build per builder
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -98,7 +105,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// First builder requests rebuild - it will cause main build to loop two times
 		// and project loop will run as usually (no repetitions)
 		b1.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -117,7 +124,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// and project loop will restart from the first one, so first and second
 		// builder will run 3 times
 		b2.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -138,7 +145,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// and project loop will restart from the first one, so all builders will run 3
 		// times
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -158,7 +165,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// first and second builder 4 times, third 3 times
 		b2.setRequestProjectRebuild(project, 1);
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(4, b1.buildsCount());
 		assertEquals(4, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -185,7 +192,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		int expectedRebuildsFirstBuilders = max * max;
 		int expectedRebuildslastBuilder = max;
 		b2.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -194,32 +201,31 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with a single project
 	 */
+	@Test
 	public void testSingleProjectPropagationAndOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project = getWorkspace().getRoot().getProject(getName());
+		IProject project = getWorkspace().getRoot().getProject(testName);
 
 		// Create and open a project
-		project.create(getMonitor());
-		project.open(getMonitor());
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"), createCommand(desc, builderName, "builder3"), });
-		project.setDescription(desc, getMonitor());
+		updateProjectDescription(project).addingCommand(builderName).withTestBuilderId("builder1")
+				.andCommand(builderName).withTestBuilderId("builder2")
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Confirm basic functionality first - one build per builder
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -230,7 +236,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// First builder requests rebuild - it will cause main build to loop two times
 		// and project loop will run once more
 		b1.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -247,7 +253,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// Second builder requests rebuild - it will cause main build to loop two times
 		// and project loop will run once more
 		b2.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -265,7 +271,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// and project loop will restart from the first one, so all builders will run 3
 		// times
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -283,7 +289,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// two times and project loop will restart once more
 		b2.setRequestProjectRebuild(project, 1);
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -308,7 +314,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		int expectedRebuildsFirstBuilders = max * max;
 		int expectedRebuildslastBuilder = max * max;
 		b2.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -317,28 +323,24 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with a single project
 	 */
+	@Test
 	public void testSingleProjectNoPropagationAndProcessOtherBuilder() throws Exception {
 		// Create some resource handles
-		IProject project = getWorkspace().getRoot().getProject(getName());
+		IProject project = getWorkspace().getRoot().getProject(testName);
 
 		// Create and open a project
-		project.create(getMonitor());
-		project.open(getMonitor());
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-		project.setDescription(desc, getMonitor());
+		updateProjectDescription(project).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
@@ -347,7 +349,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(true));
 
 		// Confirm basic functionality first - one build per builder
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -357,7 +359,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// First builder requests rebuild - all builders will run twice
 		b1.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -372,7 +374,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// Second builder requests rebuild - all builders will run twice
 		b2.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -391,7 +393,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// Third builder requests rebuild - all builders will run twice
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -407,7 +409,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// Second and third builder request rebuild - all builders will run twice
 		b2.setRequestProjectRebuild(project, 1);
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -426,7 +428,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		int expectedRebuildsFirstBuilders = max;
 		int expectedRebuildslastBuilder = max;
 		b2.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -438,7 +440,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// not more than (max * max) times (both inner / outer loop use limit)
 		expectedRebuildslastBuilder = max;
 		b3.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -447,28 +449,24 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with a single project
 	 */
+	@Test
 	public void testSingleProjectNoPropagationNoOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project = getWorkspace().getRoot().getProject(getName());
+		IProject project = getWorkspace().getRoot().getProject(testName);
 
 		// Create and open a project
-		project.create(getMonitor());
-		project.open(getMonitor());
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-		project.setDescription(desc, getMonitor());
+		updateProjectDescription(project).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
@@ -477,7 +475,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
 		// Confirm basic functionality first - one build per builder
-		project.build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		project.build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -487,7 +485,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// First builder requests rebuild - no repetitions
 		b1.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -502,7 +500,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// Second builder requests rebuild - first & second builder will run twice
 		b2.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -518,7 +516,7 @@ public class RebuildTest extends AbstractBuilderTest {
 
 		// Third builder requests rebuild - all builders will run three twice
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -535,7 +533,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// times, last one one time less
 		b2.setRequestProjectRebuild(project, 1);
 		b3.setRequestProjectRebuild(project, 1);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -563,7 +561,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		int expectedRebuildsFirstBuilders = max;
 		int expectedRebuildslastBuilder = 1;
 		b2.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -575,7 +573,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// not more than (max * max) times (both inner / outer loop use limit)
 		expectedRebuildslastBuilder = max;
 		b3.setRequestProjectRebuild(project, rebuilds);
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstBuilders, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstBuilders, b2.buildsCount());
 		assertEquals(expectedRebuildslastBuilder, b3.buildsCount());
@@ -584,46 +582,38 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsPropagationAndNoOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-				project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"),
-				createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
-
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -631,7 +621,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -647,7 +637,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop two times for both projects
 		b1.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -676,7 +666,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(4, b1.buildsCount());
 		assertEquals(4, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -693,7 +683,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setRequestProjectRebuild(project1, 1);
 		b4.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -714,7 +704,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(4, b1.buildsCount());
 		assertEquals(4, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -727,41 +717,38 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsPropagationAndProcessOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"), createCommand(desc, builderName, "builder3"), });
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"), createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
-
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -769,7 +756,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -785,7 +772,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop two times for both projects and one extra time for current one
 		b1.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -816,7 +803,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -833,7 +820,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setRequestProjectRebuild(project1, 1);
 		b4.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -854,7 +841,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -868,34 +855,30 @@ public class RebuildTest extends AbstractBuilderTest {
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 * and early exit enabled
 	 */
+	@Test
 	public void testMultipleProjectsPropagationAndNoOtherBuildersWithEarlyExit() throws Exception {
 		// turn rebuild request propagation to other projects in same loop off
 		allowEarlyBuildLoopExit(true);
 
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-				project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
@@ -904,15 +887,11 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"),
-				createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
-
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -922,7 +901,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -940,7 +919,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(4, b1.buildsCount());
 		assertEquals(4, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -976,7 +955,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setRequestProjectRebuild(project1, 1);
 		b4.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(3, b3.buildsCount());
@@ -997,7 +976,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(5, b1.buildsCount());
 		assertEquals(5, b2.buildsCount());
 		assertEquals(4, b3.buildsCount());
@@ -1021,7 +1000,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		int expectedBuildCycles = max;
 		b2.setRequestProjectRebuild(project1, rebuilds);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(expectedRebuildsFirstProject, b1.buildsCount());
 		assertEquals(expectedRebuildsFirstProject, b2.buildsCount());
 		assertEquals(expectedBuildCycles, b3.buildsCount());
@@ -1035,49 +1014,41 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsNoPropagationNoOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"),
-				createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		builders.forEach(b -> b.setPropagateRebuild(false));
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -1087,7 +1058,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1103,7 +1074,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b1.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1119,7 +1090,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b2.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1149,7 +1120,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1166,7 +1137,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b5.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1187,7 +1158,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1200,44 +1171,41 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsNoPropagationAndOtherBuilders() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"), createCommand(desc, builderName, "builder3"), });
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"), createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		builders.forEach(b -> b.setPropagateRebuild(false));
 		builders.forEach(b -> b.setProcessOtherBuilders(true));
 
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -1247,7 +1215,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(true));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1263,7 +1231,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b1.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1290,7 +1258,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b2.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1308,7 +1276,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1325,7 +1293,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b5.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1346,7 +1314,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1359,50 +1327,42 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsNoPropagationNoOtherBuildersEarlyExit() throws Exception {
 		// turn rebuild request propagation to other projects in same loop off
 		allowEarlyBuildLoopExit(true);
 
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder1"),
-				createCommand(desc, builderName, "builder2"),
-				createCommand(desc, builderName, "builder3"),
-				});
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 		RebuildingBuilder b2 = builders.get(1);
 		RebuildingBuilder b3 = builders.get(2);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
-
-		desc.setBuildSpec(new ICommand[] {
-				createCommand(desc, builderName, "builder4"),
-				createCommand(desc, builderName, "builder5"),
-				createCommand(desc, builderName, "builder6"), });
-		project2.setDescription(desc, getMonitor());
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1") //
+				.andCommand(builderName).withTestBuilderId("builder2") //
+				.andCommand(builderName).withTestBuilderId("builder3").apply();
 
 		builders.forEach(b -> b.setPropagateRebuild(false));
 
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(6, builders.size());
 		RebuildingBuilder b4 = builders.get(3);
 		RebuildingBuilder b5 = builders.get(4);
@@ -1411,7 +1371,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setPropagateRebuild(false));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1427,7 +1387,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b1.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1443,7 +1403,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		// loop extra time
 		b2.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1473,7 +1433,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1490,7 +1450,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setRequestProjectRebuild(project1, 1);
 		b5.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1511,7 +1471,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b5.setRequestProjectRebuild(project2, 1);
 		b6.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(3, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1524,49 +1484,41 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsPropagationAndNoOtherBuildersExplicitRebuild() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
-		IProject project3 = getWorkspace().getRoot().getProject(getName() + 3);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
+		IProject project3 = getWorkspace().getRoot().getProject(testName + 3);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
-		project3.create(getMonitor());
-		project3.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
+		project3.create(createTestMonitor());
+		project3.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder1"), });
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder2"), });
-		project2.setDescription(desc, getMonitor());
-
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(2, builders.size());
 		RebuildingBuilder b2 = builders.get(1);
 
 		// Create and set a build spec for the project
-		desc = project3.getDescription();
+		updateProjectDescription(project3).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder3"), });
-		project3.setDescription(desc, getMonitor());
-
-		project3.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project3.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(3, builders.size());
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
@@ -1574,7 +1526,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(false));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1587,7 +1539,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(false);
 		b1.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1603,7 +1555,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setPropagateRebuild(false);
 		b2.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1622,7 +1574,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(false);
 		b1.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1643,7 +1595,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setPropagateRebuild(false);
 		b2.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1660,7 +1612,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1676,7 +1628,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1692,7 +1644,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, project2, project3);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1705,7 +1657,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(true);
 		b1.setRequestProjectRebuild(project1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1726,7 +1678,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, rebuilds);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(max - 1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(max - 2, b3.buildsCount());
@@ -1735,49 +1687,41 @@ public class RebuildTest extends AbstractBuilderTest {
 	/**
 	 * Tests IncrementProjectBuilder.requestProjectRebuild with multiple projects
 	 */
+	@Test
 	public void testMultipleProjectsPropagationAndProcessOtherBuildersExplicitRebuild() throws Exception {
 		// Create some resource handles
-		IProject project1 = getWorkspace().getRoot().getProject(getName() + 1);
-		IProject project2 = getWorkspace().getRoot().getProject(getName() + 2);
-		IProject project3 = getWorkspace().getRoot().getProject(getName() + 3);
+		IProject project1 = getWorkspace().getRoot().getProject(testName + 1);
+		IProject project2 = getWorkspace().getRoot().getProject(testName + 2);
+		IProject project3 = getWorkspace().getRoot().getProject(testName + 3);
 
 		// Create and open a project
-		project1.create(getMonitor());
-		project1.open(getMonitor());
-		project2.create(getMonitor());
-		project2.open(getMonitor());
-		project3.create(getMonitor());
-		project3.open(getMonitor());
+		project1.create(createTestMonitor());
+		project1.open(createTestMonitor());
+		project2.create(createTestMonitor());
+		project2.open(createTestMonitor());
+		project3.create(createTestMonitor());
+		project3.open(createTestMonitor());
 
 		// Create and set a build spec for the project
-		IProjectDescription desc = project1.getDescription();
-
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder1"), });
-		project1.setDescription(desc, getMonitor());
+		updateProjectDescription(project1).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
 		// do an initial build to create builders
-		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project1.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		List<RebuildingBuilder> builders = RebuildingBuilder.getInstances();
-		assertEquals(desc.getBuildSpec().length, builders.size());
+		assertThat(project1.getDescription().getBuildSpec()).hasSameSizeAs(builders);
 		RebuildingBuilder b1 = builders.get(0);
 
 		// Create and set a build spec for the project
-		desc = project2.getDescription();
+		updateProjectDescription(project2).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder2"), });
-		project2.setDescription(desc, getMonitor());
-
-		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project2.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(2, builders.size());
 		RebuildingBuilder b2 = builders.get(1);
 
 		// Create and set a build spec for the project
-		desc = project3.getDescription();
+		updateProjectDescription(project3).addingCommand(builderName).withTestBuilderId("builder1").apply();
 
-		desc.setBuildSpec(new ICommand[] { createCommand(desc, builderName, "builder3"), });
-		project3.setDescription(desc, getMonitor());
-
-		project3.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, getMonitor());
+		project3.build(IncrementalProjectBuilder.INCREMENTAL_BUILD, createTestMonitor());
 		assertEquals(3, builders.size());
 		RebuildingBuilder b3 = builders.get(2);
 		builders.forEach(RebuildingBuilder::reset);
@@ -1785,7 +1729,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		builders.forEach(b -> b.setProcessOtherBuilders(true));
 
 		// Confirm basic functionality first - one build per builder
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1798,7 +1742,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(false);
 		b1.setRequestProjectRebuild(project2, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1814,7 +1758,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setPropagateRebuild(false);
 		b2.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1833,7 +1777,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(false);
 		b1.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1854,7 +1798,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b2.setPropagateRebuild(false);
 		b2.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1871,7 +1815,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(1, b3.buildsCount());
@@ -1887,7 +1831,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project3, 1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1903,7 +1847,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, project2, project3);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(2, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1916,7 +1860,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b1.setPropagateRebuild(true);
 		b1.setRequestProjectRebuild(project1);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(3, b1.buildsCount());
 		assertEquals(2, b2.buildsCount());
 		assertEquals(2, b3.buildsCount());
@@ -1937,7 +1881,7 @@ public class RebuildTest extends AbstractBuilderTest {
 		b3.setPropagateRebuild(false);
 		b3.setRequestProjectRebuild(project1, rebuilds);
 
-		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, getMonitor());
+		getWorkspace().build(IncrementalProjectBuilder.FULL_BUILD, createTestMonitor());
 		assertEquals(max - 1, b1.buildsCount());
 		assertEquals(1, b2.buildsCount());
 		assertEquals(max - 2, b3.buildsCount());

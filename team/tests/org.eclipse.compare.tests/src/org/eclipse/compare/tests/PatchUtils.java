@@ -13,8 +13,14 @@
  *******************************************************************************/
 package org.eclipse.compare.tests;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
+import java.nio.file.Files;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -22,8 +28,8 @@ import org.eclipse.compare.internal.Utilities;
 import org.eclipse.compare.patch.PatchConfiguration;
 import org.eclipse.core.resources.IStorage;
 import org.eclipse.core.resources.ResourcesPlugin;
-import org.eclipse.core.runtime.*;
-import org.junit.Assert;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.osgi.framework.Bundle;
 
 public class PatchUtils {
@@ -82,8 +88,8 @@ public class PatchUtils {
 		@Override
 		public InputStream getContents() throws CoreException {
 			try {
-				return new FileInputStream(file);
-			} catch (FileNotFoundException e) {
+				return Files.newInputStream(file.toPath());
+			} catch (IOException e) {
 				// ignore, should never happen
 			}
 			return null;
@@ -91,7 +97,7 @@ public class PatchUtils {
 
 		@Override
 		public IPath getFullPath() {
-			return new Path(file.getAbsolutePath());
+			return IPath.fromOSString(file.getAbsolutePath());
 		}
 
 		@Override
@@ -131,7 +137,7 @@ public class PatchUtils {
 
 		@Override
 		public IPath getFullPath() {
-			return new Path(jarFile.getName());
+			return IPath.fromOSString(jarFile.getName());
 		}
 
 		@Override
@@ -155,13 +161,12 @@ public class PatchUtils {
 	}
 
 	public static InputStream asInputStream(String name) {
-		IPath path = new Path(PATCHDATA).append(name);
+		IPath path = IPath.fromOSString(PATCHDATA).append(name);
 		try {
 			URL url = new URL(getBundle().getEntry("/"), path.toString());
 			return url.openStream();
 		} catch (IOException e) {
-			Assert.fail("Failed while reading " + name);
-			return null; // never reached
+			throw new IllegalStateException("failed while reading " + name, e);
 		}
 	}
 

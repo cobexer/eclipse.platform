@@ -16,23 +16,31 @@
  *******************************************************************************/
 package org.eclipse.core.internal.utils;
 
-import java.io.*;
+import java.io.IOException;
 import java.net.URI;
-import org.eclipse.core.filesystem.*;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import org.eclipse.core.filesystem.EFS;
+import org.eclipse.core.filesystem.IFileInfo;
+import org.eclipse.core.filesystem.IFileStore;
+import org.eclipse.core.filesystem.IFileSystem;
 import org.eclipse.core.filesystem.URIUtil;
-import org.eclipse.core.internal.resources.ResourceException;
 import org.eclipse.core.internal.resources.Workspace;
-import org.eclipse.core.resources.IResourceStatus;
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourceAttributes;
-import org.eclipse.core.runtime.*;
-import org.eclipse.osgi.service.environment.Constants;
-import org.eclipse.osgi.util.NLS;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.content.IContentDescription;
 
 /**
  * Static utility methods for manipulating Files and URIs.
  */
 public class FileUtil {
-	static final boolean MACOSX = Constants.OS_MACOSX.equals(getOS());
+	static final boolean MACOSX = Platform.OS.isMac();
 
 	/**
 	 * Converts a ResourceAttributes object into an IFileInfo object.
@@ -67,7 +75,7 @@ public class FileUtil {
 			//only create a new path if necessary
 			if (canonicalPath.equals(pathString))
 				return path;
-			return new Path(canonicalPath);
+			return IPath.fromOSString(canonicalPath);
 		} catch (IOException e) {
 			return path;
 		}
@@ -89,7 +97,7 @@ public class FileUtil {
 		IFileSystem fileSystem = EFS.getLocalFileSystem();
 		if (fileSystem.isCaseSensitive())
 			return path;
-		IPath realPath = path.isAbsolute() ? Path.ROOT : Path.EMPTY;
+		IPath realPath = path.isAbsolute() ? IPath.ROOT : IPath.EMPTY;
 		String device = path.getDevice();
 		if (device != null) {
 			realPath = realPath.setDevice(device.toUpperCase());
@@ -142,14 +150,6 @@ public class FileUtil {
 	}
 
 	/**
-	 * Returns the current OS.  Equivalent to Platform.getOS(), but tolerant of the platform runtime
-	 * not being present.
-	 */
-	private static String getOS() {
-		return System.getProperty("osgi.os", ""); //$NON-NLS-1$ //$NON-NLS-2$
-	}
-
-	/**
 	 * Converts a URI into its canonical form.
 	 */
 	public static URI canonicalURI(URI uri) {
@@ -198,8 +198,8 @@ public class FileUtil {
 		IPath two = location2;
 		// If we are on a case-insensitive file system then convert to all lower case.
 		if (!Workspace.caseSensitive) {
-			one = new Path(location1.toOSString().toLowerCase());
-			two = new Path(location2.toOSString().toLowerCase());
+			one = IPath.fromOSString(location1.toOSString().toLowerCase());
+			two = IPath.fromOSString(location2.toOSString().toLowerCase());
 		}
 		return one.isPrefixOf(two) || (bothDirections && two.isPrefixOf(one));
 	}
@@ -282,34 +282,6 @@ public class FileUtil {
 	}
 
 	/**
-	 * Closes a stream and ignores any resulting exception. This is useful
-	 * when doing stream cleanup in a finally block where secondary exceptions
-	 * are not worth logging.
-	 *
-	 *<p>
-	 * <strong>WARNING:</strong>
-	 * If the API contract requires notifying clients of I/O problems, then you <strong>must</strong>
-	 * explicitly close() output streams outside of safeClose().
-	 * Some OutputStreams will defer an IOException from write() to close().  So
-	 * while the writes may 'succeed', ignoring the IOExcpetion will result in silent
-	 * data loss.
-	 * </p>
-	 * <p>
-	 * This method should only be used as a fail-safe to ensure resources are not
-	 * leaked.
-	 * </p>
-	 * See also: https://bugs.eclipse.org/bugs/show_bug.cgi?id=332543
-	 */
-	public static void safeClose(Closeable stream) {
-		try {
-			if (stream != null)
-				stream.close();
-		} catch (IOException e) {
-			//ignore
-		}
-	}
-
-	/**
 	 * Converts a URI to an IPath.  Returns null if the URI cannot be represented
 	 * as an IPath.
 	 * <p>
@@ -322,46 +294,73 @@ public class FileUtil {
 		final String scheme = uri.getScheme();
 		// null scheme represents path variable
 		if (scheme == null || EFS.SCHEME_FILE.equals(scheme))
-			return new Path(uri.getSchemeSpecificPart());
+			return IPath.fromOSString(uri.getSchemeSpecificPart());
 		return null;
 	}
 
-	public static final void transferStreams(InputStream source, OutputStream destination, String path,
-			IProgressMonitor monitor) throws CoreException {
-		SubMonitor subMonitor = SubMonitor.convert(monitor);
+	public static char[] readAllChars(IFile file) throws CoreException {
+		byte[] content = file.readAllBytes();
+		Charset charset = getCharset(file, content);
+		return FileUtil.toCharArray(content, charset);
+	}
+
+	public static String readString(IFile file) throws CoreException {
+		byte[] content = file.readAllBytes();
+		Charset charset = getCharset(file, content);
+		return FileUtil.toString(content, charset);
+	}
+
+	private static Charset getCharset(IFile file, byte[] content) {
+		Charset charset;
 		try {
-			try {
-				if (source instanceof ByteArrayInputStream) {
-					// ByteArrayInputStream does overload transferTo avoiding buffering
-					((ByteArrayInputStream) source).transferTo(destination);
-					subMonitor.split(1);
-				} else {
-					byte[] buffer = new byte[8192];
-					while (true) {
-						int bytesRead = -1;
-						try {
-							bytesRead = source.read(buffer);
-						} catch (IOException e) {
-							String msg = NLS.bind(Messages.localstore_failedReadDuringWrite, path);
-							throw new ResourceException(IResourceStatus.FAILED_READ_LOCAL, new Path(path), msg, e);
-						}
-						if (bytesRead == -1) {
-							break;
-						}
-						destination.write(buffer, 0, bytesRead);
-						subMonitor.split(1);
-					}
-				}
-				// Bug 332543 - ensure we don't ignore failures on close()
-				destination.close();
-			} catch (IOException e) {
-				String msg = NLS.bind(Messages.localstore_couldNotWrite, path);
-				throw new ResourceException(IResourceStatus.FAILED_WRITE_LOCAL, new Path(path), msg, e);
-			}
-		} finally {
-			safeClose(source);
-			safeClose(destination);
+			String encoding = file.getCharset(); // TODO possible optimization: use content while evaluating BOM
+			charset = Charset.forName(encoding);
+		} catch (CoreException | IllegalArgumentException ce) {
+			// encoding is not supported
+			charset = Charset.defaultCharset();
 		}
+		return charset;
+	}
+
+	private static String toString(byte[] content, Charset charset) {
+		int start = getContentStart(content, charset);
+		return new String(content, start, content.length - start, charset);
+	}
+
+	private static char[] toCharArray(byte[] content, Charset charset) {
+		int start = getContentStart(content, charset);
+		return decode(content, start, content.length - start, charset);
+	}
+
+	private static int getContentStart(byte[] content, Charset charset) {
+		/** encoded UTF Byte-Order-Mark U+FEFF **/
+		byte[] bom = null;
+		if (StandardCharsets.UTF_8.equals(charset)) {
+			bom = IContentDescription.BOM_UTF_8;
+		} else if (StandardCharsets.UTF_16BE.equals(charset)) {
+			bom = IContentDescription.BOM_UTF_16BE;
+		} else if (StandardCharsets.UTF_16LE.equals(charset)) {
+			bom = IContentDescription.BOM_UTF_16LE;
+		}
+		boolean startsWithBom = bom != null && bom.length <= content.length
+				&& Arrays.equals(content, 0, bom.length, bom, 0, bom.length);
+		return startsWithBom ? bom.length : 0;
+	}
+
+	/**
+	 * conversionless implementation of
+	 *
+	 * @return new String(srcBytes, start, length, charset).toCharArray();
+	 **/
+	private static char[] decode(byte[] content, int start, int length, Charset charset) {
+		ByteBuffer srcBuffer = ByteBuffer.wrap(content, start, length);
+		CharBuffer destBuffer = charset.decode(srcBuffer);
+		char[] dst = destBuffer.array();
+		int chars = destBuffer.remaining();
+		if (chars != dst.length) {
+			dst = Arrays.copyOf(dst, chars);
+		}
+		return dst;
 	}
 
 	/**

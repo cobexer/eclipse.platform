@@ -13,15 +13,29 @@
  *******************************************************************************/
 package org.eclipse.core.tests.internal.propertytester;
 
-import java.io.ByteArrayInputStream;
-import org.eclipse.core.internal.propertytester.FilePropertyTester;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.tests.resources.ResourceTest;
-import org.eclipse.core.tests.resources.content.IContentTypeManagerTest;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomContentsStream;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createTestMonitor;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class FilePropertyTesterTest extends ResourceTest {
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.stream.Stream;
+import org.eclipse.core.internal.propertytester.FilePropertyTester;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.tests.resources.content.IContentTypeManagerTest;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+
+@ExtendWith(WorkspaceResetExtension.class)
+public class FilePropertyTesterTest {
 
 	private static final String CONTENT_TYPE_ID = "contentTypeId";
 	private static final String IS_KIND_OF = "kindOf";
@@ -29,84 +43,67 @@ public class FilePropertyTesterTest extends ResourceTest {
 
 	private FilePropertyTester tester = null;
 	private IProject project = null;
-	private IProgressMonitor monitor = null;
 
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
-		monitor = new NullProgressMonitor();
-		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
-		project = root.getProject("project1");
-		project.create(monitor);
-		project.open(monitor);
-
+	@BeforeEach
+	public void setUp() throws CoreException {
+		project = getWorkspace().getRoot().getProject("project1");
+		project.create(createTestMonitor());
+		project.open(createTestMonitor());
 		tester = new FilePropertyTester();
 	}
 
-	public void testNonExistingTextFile() throws Throwable {
+	private static Stream<List<String>> arguments() {
+		return Stream.of( //
+				List.of(), //
+				List.of(IS_KIND_OF), //
+				List.of(USE_FILENAME_ONLY), //
+				List.of(IS_KIND_OF, USE_FILENAME_ONLY) //
+		);
+	}
+
+	@ParameterizedTest
+	@MethodSource("arguments")
+	public void testNonExistingTextFile(List<String> arguments) throws Throwable {
 		String expected = "org.eclipse.core.runtime.text";
 		IFile target = project.getFile("tmp.txt");
 
-		boolean ret;
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {}, expected);
-		assertFalse("1.0", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF}, expected);
-		assertFalse("1.1", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {USE_FILENAME_ONLY}, expected);
-		assertTrue("1.2", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF, USE_FILENAME_ONLY}, expected);
-		assertTrue("1.3", ret);
-
+		boolean testResult = tester.test(target, CONTENT_TYPE_ID, arguments.toArray(), expected);
+		assertEquals(arguments.contains(USE_FILENAME_ONLY), testResult);
 	}
 
-	public void testExistingTextFile() throws Throwable {
+	@ParameterizedTest
+	@MethodSource("arguments")
+	public void testExistingTextFile(List<String> arguments) throws Throwable {
 		String expected = "org.eclipse.core.runtime.text";
 		IFile target = project.getFile("tmp.txt");
-		target.create(getRandomContents(), true, getMonitor());
+		target.create(createRandomContentsStream(), true, createTestMonitor());
 
-		boolean ret;
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {}, expected);
-		assertTrue("1.0", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF}, expected);
-		assertTrue("1.1", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {USE_FILENAME_ONLY}, expected);
-		assertTrue("1.2", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF, USE_FILENAME_ONLY}, expected);
-		assertTrue("1.3", ret);
+		assertTrue(tester.test(target, CONTENT_TYPE_ID, arguments.toArray(), expected));
 	}
 
-	public void testNonExistingNsRootElementFile() throws Throwable {
+	@ParameterizedTest
+	@MethodSource("arguments")
+	public void testNonExistingNsRootElementFile(List<String> arguments) throws Throwable {
 		String expectedBase = "org.eclipse.core.runtime.xml";
 		String expectedExact = "org.eclipse.core.tests.resources.ns-root-element";
+		String expected = arguments.isEmpty() ? expectedExact : expectedBase;
 		IFile target = project.getFile("tmp.xml");
 
-		boolean ret;
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {}, expectedExact);
-		assertFalse("1.0", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF}, expectedBase);
-		assertFalse("1.1", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {USE_FILENAME_ONLY}, expectedBase);
-		assertTrue("1.2", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF, USE_FILENAME_ONLY}, expectedBase);
-		assertTrue("1.3", ret);
+		boolean testResult = tester.test(target, CONTENT_TYPE_ID, arguments.toArray(), expected);
+		assertEquals(arguments.contains(USE_FILENAME_ONLY), testResult);
 	}
 
-	public void testExistingNsRootElementFile() throws Throwable {
+	@ParameterizedTest
+	@MethodSource("arguments")
+	public void testExistingNsRootElementFile(List<String> arguments) throws Throwable {
 		String expectedBase = "org.eclipse.core.runtime.xml";
 		String expectedExact = "org.eclipse.core.tests.resources.ns-root-element";
+		String expected = arguments.isEmpty() ? expectedExact : expectedBase;
 		IFile target = project.getFile("tmp.xml");
-		byte[] bytes = IContentTypeManagerTest.XML_ROOT_ELEMENT_NS_MATCH1.getBytes("UTF-8");
-		target.create(new ByteArrayInputStream(bytes), true, getMonitor());
+		byte[] bytes = IContentTypeManagerTest.XML_ROOT_ELEMENT_NS_MATCH1.getBytes(StandardCharsets.UTF_8);
+		target.create(new ByteArrayInputStream(bytes), true, createTestMonitor());
 
-		boolean ret;
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {}, expectedExact);
-		assertTrue("1.0", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF}, expectedBase);
-		assertTrue("1.1", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {USE_FILENAME_ONLY}, expectedBase);
-		assertTrue("1.2", ret);
-		ret = tester.test(target, CONTENT_TYPE_ID, new String[] {IS_KIND_OF, USE_FILENAME_ONLY}, expectedBase);
-		assertTrue("1.3", ret);
+		assertTrue(tester.test(target, CONTENT_TYPE_ID, arguments.toArray(), expected));
 	}
 
 }

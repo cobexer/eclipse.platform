@@ -15,10 +15,21 @@
  *******************************************************************************/
 package org.eclipse.core.resources;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URI;
-import org.eclipse.core.runtime.*;
+import java.util.Objects;
+import org.eclipse.core.internal.utils.FileUtil;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IAdaptable;
+import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Platform;
+import org.eclipse.core.runtime.QualifiedName;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.content.IContentDescription;
 import org.eclipse.core.runtime.content.IContentTypeManager;
 
@@ -348,81 +359,176 @@ public interface IFile extends IResource, IEncodedStorage, IAdaptable {
 	void create(InputStream source, int updateFlags, IProgressMonitor monitor) throws CoreException;
 
 	/**
-	 * Creates a new file resource as a member of this handle's parent resource.
-	 * The file's contents will be located in the file specified by the given
-	 * file system path.  The given path must be either an absolute file system
-	 * path, or a relative path whose first segment is the name of a workspace path
-	 * variable.
+	 * Creates the file with the given content as byte array. Same as calling
+	 * {@link #create(InputStream, int, IProgressMonitor)} with flags depending on
+	 * the boolean parameters and a {@code new ByteArrayInputStream(content)} as
+	 * {@code InputStream}. This method is preferably over the streaming API when
+	 * the content is available as byte array anyway.
+	 *
+	 * @param content the content as byte array
+	 * @param force   a flag controlling how to deal with resources that are not in
+	 *                sync with the local file system
+	 * @param derived Specifying this flag is equivalent to atomically calling
+	 *                {@link IResource#setDerived(boolean)} immediately after
+	 *                creating the resource
+	 * @param monitor a progress monitor, or <code>null</code> if progress reporting
+	 *                is not desired
+	 * @throws CoreException if this method fails or is canceled.
+	 * @since 3.21
+	 */
+	public default void create(byte[] content, boolean force, boolean derived, IProgressMonitor monitor)
+			throws CoreException {
+		int createFlags = (force ? IResource.FORCE : IResource.NONE) | (derived ? IResource.DERIVED : IResource.NONE);
+		create(content, createFlags, monitor);
+	}
+
+	/**
+	 * Creates the file with the given content as byte array. Same as calling
+	 * {@link #create(InputStream, int, IProgressMonitor)} and a
+	 * {@code new ByteArrayInputStream(content)} as {@code InputStream}. This method
+	 * is preferably over the streaming API when the content is available as byte
+	 * array anyway.
+	 *
+	 * @param content     the content as byte array
+	 * @param createFlags bit-wise or of flag constants ({@link IResource#FORCE},
+	 *                    {@link IResource#DERIVED}, and
+	 *                    {@link IResource#TEAM_PRIVATE})
+	 * @param monitor     a progress monitor, or <code>null</code> if progress
+	 *                    reporting is not desired
+	 * @throws CoreException if this method fails or is canceled.
+	 * @since 3.21
+	 */
+	public default void create(byte[] content, int createFlags, IProgressMonitor monitor) throws CoreException {
+		create(new ByteArrayInputStream(content), createFlags, monitor);
+	}
+
+	/**
+	 * Creates the file and sets the file content. If the file already exists in
+	 * workspace its content is replaced. Shortcut for calling
+	 * {@link #setContents(byte[], boolean, boolean, IProgressMonitor)} or
+	 * {@link #create(byte[], boolean, boolean, IProgressMonitor)} if the file does
+	 * not {@link #exists()}.
+	 *
+	 * @param content     the new content bytes. Must not be null.
+	 * @param force       a flag controlling how to deal with resources that are not
+	 *                    in sync with the local file system
+	 * @param derived     Specifying this flag is equivalent to atomically calling
+	 *                    {@link IResource#setDerived(boolean)} immediately after
+	 *                    creating the resource or atomically setting the derived
+	 *                    flag before setting the content of an already existing
+	 *                    file if derived==true. A value of false will not update
+	 *                    the derived flag of an existing file.
+	 * @param keepHistory a flag indicating whether or not store the current
+	 *                    contents in the local history if the file did already
+	 *                    exist
+	 * @param monitor     a progress monitor, or <code>null</code> if progress
+	 *                    reporting is not desired
+	 * @throws CoreException if this method fails or is canceled.
+	 * @since 3.21
+	 */
+	public default void write(byte[] content, boolean force, boolean derived, boolean keepHistory,
+			IProgressMonitor monitor) throws CoreException {
+		Objects.requireNonNull(content);
+		if (exists()) {
+			int updateFlags = (derived ? IResource.DERIVED : IResource.NONE)
+					| (force ? IResource.FORCE : IResource.NONE)
+					| (keepHistory ? IResource.KEEP_HISTORY : IResource.NONE);
+			setContents(content, updateFlags, monitor);
+		} else {
+			create(content, force, derived, monitor);
+		}
+	}
+
+	/**
+	 * Creates a new file resource as a member of this handle's parent resource. The
+	 * file's contents will be located in the file specified by the given file
+	 * system path. The given path must be either an absolute file system path, or a
+	 * relative path whose first segment is the name of a workspace path variable.
 	 * <p>
 	 * The {@link IResource#ALLOW_MISSING_LOCAL} update flag controls how this
 	 * method deals with cases where the local file system file to be linked does
 	 * not exist, or is relative to a workspace path variable that is not defined.
-	 * If {@link IResource#ALLOW_MISSING_LOCAL} is specified, the operation will succeed
-	 * even if the local file is missing, or the path is relative to an undefined
-	 * variable. If {@link IResource#ALLOW_MISSING_LOCAL} is not specified, the operation
-	 * will fail in the case where the local file system file does not exist or the
-	 * path is relative to an undefined variable.
+	 * If {@link IResource#ALLOW_MISSING_LOCAL} is specified, the operation will
+	 * succeed even if the local file is missing, or the path is relative to an
+	 * undefined variable. If {@link IResource#ALLOW_MISSING_LOCAL} is not
+	 * specified, the operation will fail in the case where the local file system
+	 * file does not exist or the path is relative to an undefined variable.
 	 * </p>
 	 * <p>
-	 * The {@link IResource#REPLACE} update flag controls how this
-	 * method deals with cases where a resource of the same name as the
-	 * prospective link already exists. If {@link IResource#REPLACE}
-	 * is specified, then the existing linked resource's location is replaced
-	 * by localLocation's value.  This does <b>not</b>
-	 * cause the underlying file system contents of that resource to be deleted.
-	 * If {@link IResource#REPLACE} is not specified, this method will
-	 * fail if an existing resource exists of the same name.
+	 * The {@link IResource#REPLACE} update flag controls how this method deals with
+	 * cases where a resource of the same name as the prospective link already
+	 * exists. If {@link IResource#REPLACE} is specified, then the existing linked
+	 * resource's location is replaced by localLocation's value. This does
+	 * <b>not</b> cause the underlying file system contents of that resource to be
+	 * deleted. If {@link IResource#REPLACE} is not specified, this method will fail
+	 * if an existing resource exists of the same name.
 	 * </p>
 	 * <p>
-	 * The {@link IResource#HIDDEN} update flag indicates that this resource
-	 * should immediately be set as a hidden resource.  Specifying this flag
-	 * is equivalent to atomically calling {@link IResource#setHidden(boolean)}
-	 * with a value of <code>true</code> immediately after creating the resource.
+	 * The {@link IResource#HIDDEN} update flag indicates that this resource should
+	 * immediately be set as a hidden resource. Specifying this flag is equivalent
+	 * to atomically calling {@link IResource#setHidden(boolean)} with a value of
+	 * <code>true</code> immediately after creating the resource.
 	 * </p>
 	 * <p>
 	 * Update flags other than those listed above are ignored.
 	 * </p>
 	 * <p>
-	 * This method synchronizes this resource with the local file system at the given
-	 * location.
+	 * This method synchronizes this resource with the local file system at the
+	 * given location.
 	 * </p>
 	 * <p>
-	 * This method changes resources; these changes will be reported
-	 * in a subsequent resource change event, including an indication
-	 * that the file has been added to its parent.
+	 * This method changes resources; these changes will be reported in a subsequent
+	 * resource change event, including an indication that the file has been added
+	 * to its parent.
 	 * </p>
 	 * <p>
-	 * This method is long-running; progress and cancellation are provided
-	 * by the given progress monitor.
+	 * This method is long-running; progress and cancellation are provided by the
+	 * given progress monitor.
 	 * </p>
 	 *
 	 * @param localLocation a file system path where the file should be linked
-	 * @param updateFlags bit-wise or of update flag constants
-	 *   ({@link IResource#ALLOW_MISSING_LOCAL}, {@link IResource#REPLACE} and {@link IResource#HIDDEN})
-	 * @param monitor a progress monitor, or <code>null</code> if progress
-	 *    reporting is not desired
-	 * @exception CoreException if this method fails. Reasons include:
-	 * <ul>
-	 * <li> This resource already exists in the workspace.</li>
-	 * <li> The workspace contains a resource of a different type
-	 *      at the same path as this resource.</li>
-	 * <li> The parent of this resource does not exist.</li>
-	 * <li> The parent of this resource is not an open project</li>
-	 * <li> The name of this resource is not valid (according to
-	 *    <code>IWorkspace.validateName</code>).</li>
-	 * <li> The corresponding location in the local file system does not exist, or
-	 * is relative to an undefined variable, and <code>ALLOW_MISSING_LOCAL</code> is
-	 * not specified.</li>
-	 * <li> The corresponding location in the local file system is occupied
-	 *    by a directory (as opposed to a file).</li>
-	 * <li> Resource changes are disallowed during certain types of resource change
-	 *       event notification.  See <code>IResourceChangeEvent</code> for more details.</li>
-	 * <li>The team provider for the project which contains this folder does not permit
-	 *       linked resources.</li>
-	 * <li>This folder's project contains a nature which does not permit linked resources.</li>
-	 * </ul>
+	 * @param updateFlags   bit-wise or of update flag constants
+	 *                      ({@link IResource#ALLOW_MISSING_LOCAL},
+	 *                      {@link IResource#REPLACE} and {@link IResource#HIDDEN})
+	 * @param monitor       a progress monitor, or <code>null</code> if progress
+	 *                      reporting is not desired
+	 * @exception CoreException              if this method fails. Reasons include:
+	 *                                       <ul>
+	 *                                       <li>This resource already exists in the
+	 *                                       workspace.</li>
+	 *                                       <li>The workspace contains a resource
+	 *                                       of a different type at the same path as
+	 *                                       this resource.</li>
+	 *                                       <li>The parent of this resource does
+	 *                                       not exist.</li>
+	 *                                       <li>The parent of this resource is not
+	 *                                       an open project</li>
+	 *                                       <li>The name of this resource is not
+	 *                                       valid (according to
+	 *                                       <code>IWorkspace.validateName</code>).</li>
+	 *                                       <li>The corresponding location in the
+	 *                                       local file system does not exist, or is
+	 *                                       relative to an undefined variable, and
+	 *                                       <code>ALLOW_MISSING_LOCAL</code> is not
+	 *                                       specified.</li>
+	 *                                       <li>The corresponding location in the
+	 *                                       local file system is occupied by a
+	 *                                       directory (as opposed to a file).</li>
+	 *                                       <li>Resource changes are disallowed
+	 *                                       during certain types of resource change
+	 *                                       event notification. See
+	 *                                       <code>IResourceChangeEvent</code> for
+	 *                                       more details.</li>
+	 *                                       <li>The team provider for the project
+	 *                                       which contains this folder does not
+	 *                                       permit linked resources.</li>
+	 *                                       <li>This folder's project contains a
+	 *                                       nature which does not permit linked
+	 *                                       resources.</li>
+	 *                                       </ul>
 	 * @exception OperationCanceledException if the operation is canceled.
-	 * Cancelation can occur even if no progress monitor is provided.
+	 *                                       Cancelation can occur even if no
+	 *                                       progress monitor is provided.
 	 * @see IResource#isLinked()
 	 * @see IResource#ALLOW_MISSING_LOCAL
 	 * @see IResource#REPLACE
@@ -1162,6 +1268,119 @@ public interface IFile extends IResource, IEncodedStorage, IAdaptable {
 	 * @since 2.0
 	 */
 	void setContents(IFileState source, int updateFlags, IProgressMonitor monitor) throws CoreException;
+
+	/**
+	 * Equivalent of calling
+	 * {@link #setContents(InputStream, boolean, boolean, IProgressMonitor)} with
+	 * {@code new ByteArrayInputStream(content)} as {@code InputStream}. This is
+	 * preferable (potentially faster) when the content is available as byte array
+	 * anyway.
+	 *
+	 * @param content     the content bytes
+	 * @param force       a flag controlling how to deal with resources that are not
+	 *                    in sync with the local file system
+	 * @param keepHistory a flag indicating whether or not store the current
+	 *                    contents in the local history
+	 * @param monitor     a progress monitor, or <code>null</code> if progress
+	 *                    reporting is not desired
+	 * @throws CoreException if this method fails or is canceled.
+	 * @since 3.21
+	 */
+	public default void setContents(byte[] content, boolean force, boolean keepHistory, IProgressMonitor monitor)
+			throws CoreException {
+		int updateFlags = (force ? IResource.FORCE : IResource.NONE)
+				| (keepHistory ? IResource.KEEP_HISTORY : IResource.NONE);
+		setContents(content, updateFlags, monitor);
+	}
+
+	/**
+	 * Equivalent of calling
+	 * {@link #setContents(InputStream, int, IProgressMonitor)} with
+	 * {@code new ByteArrayInputStream(content)} as {@code InputStream}. This is
+	 * preferable (potentially faster) when the content is available as byte array
+	 * anyway.
+	 *
+	 * @param content     the content bytes
+	 * @param updateFlags bit-wise or of update flag constants (<code>FORCE</code>
+	 *                    and <code>KEEP_HISTORY</code>)
+	 * @param monitor     a progress monitor, or <code>null</code> if progress
+	 *                    reporting is not desired
+	 * @throws CoreException if this method fails or is canceled.
+	 * @since 3.21
+	 */
+	public default void setContents(byte[] content, int updateFlags, IProgressMonitor monitor) throws CoreException {
+		// Meant to be overridden for local files with Files.write
+		setContents(new ByteArrayInputStream(content), updateFlags, monitor);
+	}
+
+	/**
+	 * Reads the content in a byte array. This method is not intended for reading in
+	 * large files that do not fit in a byte array. Preferable (faster) equivalent
+	 * of calling {@code getContents(true).readAllBytes()}.
+	 *
+	 * @return content bytes
+	 * @throws CoreException on error
+	 * @see #getContents(boolean)
+	 * @since 3.21
+	 */
+	public default byte[] readAllBytes() throws CoreException {
+		// Meant to be overridden for local files
+		// as Files.readAllBytes is ~ 1.5 times faster
+		try (InputStream stream = getContents(true)) {
+			return stream.readAllBytes();
+		} catch (IOException e) {
+			throw new CoreException(Status.error("Error reading " + getFullPath(), e)); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * Reads the first bytes of the content in a byte array. Equivalent of calling
+	 * {@code getContents(true).readNBytes(maxBytes)} but also closing the stream.
+	 *
+	 * @param maxBytes The maximal length of the returned array. If maxBytes is
+	 *                 greater or equal to the file length the whole content is
+	 *                 returned. If maxBytes is smaller then the file length then
+	 *                 only the first maxBytes bytes are returned.
+	 * @return content bytes
+	 * @throws CoreException on error
+	 * @see #getContents(boolean)
+	 * @since 3.21
+	 */
+	public default byte[] readNBytes(int maxBytes) throws CoreException {
+		try (InputStream stream = getContents(true)) {
+			return stream.readNBytes(maxBytes);
+		} catch (IOException e) {
+			throw new CoreException(Status.error("Error reading " + getFullPath(), e)); //$NON-NLS-1$
+		}
+	}
+
+	/**
+	 * Reads the content as char array. Skips the UTF BOM header if any. This method
+	 * is not intended for reading in large files that do not fit in a char array.
+	 * Preferable (potentially faster) equivalent of calling
+	 * {@code readString().toCharArray()}.
+	 *
+	 * @return content as char array without UTF BOM header
+	 * @throws CoreException on error
+	 * @see #readString()
+	 * @since 3.21
+	 */
+	public default char[] readAllChars() throws CoreException {
+		return FileUtil.readAllChars(this);
+	}
+
+	/**
+	 * Reads the content as String. Skips the UTF BOM header if any. This method is
+	 * not intended for reading in large files that do not fit in a String.
+	 *
+	 * @return content String without UTF BOM header
+	 * @throws CoreException on error
+	 * @see #readAllBytes()
+	 * @since 3.21
+	 */
+	public default String readString() throws CoreException {
+		return FileUtil.readString(this);
+	}
 
 	/**
 	 * Returns line separator appropriate for the given file.

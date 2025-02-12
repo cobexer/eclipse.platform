@@ -13,6 +13,11 @@
  *******************************************************************************/
 package org.eclipse.team.tests.ui.synchronize;
 
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.buildResources;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -20,20 +25,23 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import junit.framework.Test;
-
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
 import org.eclipse.jface.viewers.TreePath;
 import org.eclipse.team.core.mapping.ISynchronizationContext;
 import org.eclipse.team.core.mapping.ISynchronizationScope;
 import org.eclipse.team.internal.ui.mapping.ResourceModelContentProvider;
-import org.eclipse.team.tests.core.TeamTest;
 import org.eclipse.team.ui.synchronize.ISynchronizePageConfiguration;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-public class ResourceContentTests extends TeamTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class ResourceContentTests {
 
 	public static class TestableResourceModelContentProvider extends ResourceModelContentProvider {
 
@@ -63,30 +71,16 @@ public class ResourceContentTests extends TeamTest {
 		}
 	}
 
-	public static Test suite() {
-		return suite(ResourceContentTests.class);
-	}
-
 	private ResourceModelContentProvider provider;
 
-	public ResourceContentTests() {
-		super();
-	}
-
-	public ResourceContentTests(String name) {
-		super(name);
-	}
-
-	@Override
-	protected void setUp() throws Exception {
+	@BeforeEach
+	public void setUp() throws Exception {
 		initializeProvider(null, null, null);
-		super.setUp();
 	}
 
-	@Override
-	protected void tearDown() throws Exception {
+	@AfterEach
+	public void tearDown() throws Exception {
 		cleanupProvider();
-		super.tearDown();
 	}
 
 	private void initializeProvider(ISynchronizationScope scope, ISynchronizationContext context, ISynchronizePageConfiguration configuration) {
@@ -116,12 +110,8 @@ public class ResourceContentTests extends TeamTest {
 				iterator.remove();
 			}
 		}
-		if (!resourceSet.isEmpty()) {
-			fail("Tree entries were missing for " + toString(resourceSet));
-		}
-		if (!paths.isEmpty()) {
-			fail("Tree entries were found for " + toString(paths));
-		}
+		assertFalse(resourceSet.isEmpty(), "Tree entries were missing for " + toString(resourceSet));
+		assertFalse(paths.isEmpty(), "Tree entries were found for " + toString(paths));
 	}
 
 	private Set getPaths(Object root) {
@@ -151,8 +141,7 @@ public class ResourceContentTests extends TeamTest {
 	private String toString(Set set) {
 		StringBuilder buffer = new StringBuilder();
 		boolean addComma = false;
-		for (Iterator iterator = set.iterator(); iterator.hasNext();) {
-			Object resource = iterator.next();
+		for (Object resource : set) {
 			buffer.append(toString(resource));
 			if (addComma)
 				buffer.append(", ");
@@ -180,22 +169,16 @@ public class ResourceContentTests extends TeamTest {
 				resources.add(project.getFile(path));
 			}
 		}
-		return (IResource[]) resources.toArray(new IResource[resources.size()]);
+		return resources.toArray(new IResource[resources.size()]);
 	}
 
+	@Test
 	public void testFileContent() throws CoreException {
+		IProject project = getWorkspace().getRoot().getProject("Project");
+		createInWorkspace(project);
 		String[] files = new String[] {"file.txt", "file2.txt", "folder1/file3.txt", "folder1/folder2/file4.txt"};
-		IProject project = createProject(files);
-		files = new String[] {".project", "file.txt", "file2.txt", "folder1/file3.txt", "folder1/folder2/file4.txt"};
+		buildResources(project, files);
 		assertContentMatches(project, files);
 	}
-
-	public void testFileChange() throws CoreException {
-//		String[] files = new String[] {"file.txt", "file2.txt", "folder1/file3.txt", "folder1/folder2/file4.txt"};
-//		IProject project = createProject(files);
-
-	}
-
-
 
 }

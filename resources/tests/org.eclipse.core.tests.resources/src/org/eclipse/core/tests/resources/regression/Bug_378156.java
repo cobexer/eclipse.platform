@@ -13,17 +13,39 @@
  *******************************************************************************/
 package org.eclipse.core.tests.resources.regression;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.core.resources.ResourcesPlugin.getWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestPluginConstants.PI_RESOURCES_TESTS;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createInWorkspace;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomContentsStream;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.createRandomString;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.updateProjectDescription;
+import static org.eclipse.core.tests.resources.ResourceTestUtil.waitForBuild;
+
 import java.util.concurrent.Semaphore;
-import org.eclipse.core.resources.*;
-import org.eclipse.core.runtime.*;
-import org.eclipse.core.tests.resources.ResourceTest;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.resources.IWorkspaceRunnable;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.resources.WorkspaceJob;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.OperationCanceledException;
+import org.eclipse.core.runtime.Status;
 import org.eclipse.core.tests.resources.usecase.SignaledBuilder;
+import org.eclipse.core.tests.resources.util.WorkspaceResetExtension;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Tests a timing problem where a canceled waiting thread could cause a change
  * in another thread to skip building.
  */
-public class Bug_378156 extends ResourceTest {
+@ExtendWith(WorkspaceResetExtension.class)
+public class Bug_378156 {
 
 	class ModifyFileJob extends WorkspaceJob {
 		private boolean cancel;
@@ -44,12 +66,13 @@ public class Bug_378156 extends ResourceTest {
 			if (cancel) {
 				throw new OperationCanceledException();
 			}
-			jobFile.setContents(getRandomContents(), IResource.NONE, null);
+			jobFile.setContents(createRandomContentsStream(), IResource.NONE, null);
 			//wait for signal
 			try {
 				jobFlag.acquire();
 			} catch (InterruptedException e) {
-				fail("0.99", e);
+				throw new CoreException(
+						new Status(IStatus.ERROR, PI_RESOURCES_TESTS, "Failed to acquire job flag log", e));
 			}
 			return Status.OK_STATUS;
 		}
@@ -62,19 +85,16 @@ public class Bug_378156 extends ResourceTest {
 		}
 	}
 
+	@Test
 	public void testBugTwoThreads() throws Exception {
 		//setup
 		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
 		final IProject project1 = root.getProject("Bug_378156");
 		final IFile file = project1.getFile("content.txt");
-		ensureExistsInWorkspace(project1, true);
+		createInWorkspace(project1);
 		//add a builder that can tell us if it was called
-		IProjectDescription desc = project1.getDescription();
-		ICommand command = desc.newCommand();
-		command.setBuilderName(SignaledBuilder.BUILDER_ID);
-		desc.setBuildSpec(new ICommand[] {command});
-		project1.setDescription(desc, getMonitor());
-		ensureExistsInWorkspace(file, getRandomContents());
+		updateProjectDescription(project1).addingCommand(SignaledBuilder.BUILDER_ID).apply();
+		createInWorkspace(file, createRandomString());
 		//build may not be triggered immediately
 		Thread.sleep(2000);
 		waitForBuild();
@@ -101,22 +121,19 @@ public class Bug_378156 extends ResourceTest {
 		waitForBuild();
 
 		//the builder should have run if the bug is fixed
-		assertTrue("1.0", builder.wasExecuted());
+		assertThat(builder).matches(SignaledBuilder::wasExecuted, "was executed");
 	}
 
+	@Test
 	public void testBugOneThread() throws Exception {
 		//setup
 		IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
 		final IProject project1 = root.getProject("Bug_378156");
 		final IFile file = project1.getFile("content.txt");
-		ensureExistsInWorkspace(project1, true);
+		createInWorkspace(project1);
 		//add a builder that can tell us if it was called
-		IProjectDescription desc = project1.getDescription();
-		ICommand command = desc.newCommand();
-		command.setBuilderName(SignaledBuilder.BUILDER_ID);
-		desc.setBuildSpec(new ICommand[] {command});
-		project1.setDescription(desc, getMonitor());
-		ensureExistsInWorkspace(file, getRandomContents());
+		updateProjectDescription(project1).addingCommand(SignaledBuilder.BUILDER_ID).apply();
+		createInWorkspace(file, createRandomString());
 		waitForBuild();
 
 		//initialize the builder
@@ -125,7 +142,7 @@ public class Bug_378156 extends ResourceTest {
 
 		getWorkspace().run((IWorkspaceRunnable) monitor -> {
 			//modify the file so autobuild is needed
-			file.setContents(getRandomContents(), IResource.NONE, null);
+			file.setContents(createRandomContentsStream(), IResource.NONE, null);
 			//create a nested operation that immediately cancels
 			try {
 				getWorkspace().run((IWorkspaceRunnable) monitor1 -> {
@@ -137,7 +154,7 @@ public class Bug_378156 extends ResourceTest {
 		}, null);
 		waitForBuild();
 		//the builder should have run if the bug is fixed
-		assertTrue("1.0", builder.wasExecuted());
+		assertThat(builder).matches(SignaledBuilder::wasExecuted, "was executed");
 	}
 
 }

@@ -13,12 +13,15 @@
  *******************************************************************************/
 package org.eclipse.core.tests.session;
 
+import static org.eclipse.core.tests.harness.TestHarnessPlugin.PI_HARNESS;
+import static org.eclipse.core.tests.harness.TestHarnessPlugin.log;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,7 +33,6 @@ import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.core.runtime.Status;
-import org.eclipse.core.tests.harness.CoreTest;
 
 /**
  * This class is responsible for launching JUnit tests on a separate Eclipse session and collect
@@ -60,11 +62,11 @@ public class SessionTestRunner {
 	class ResultCollector implements Runnable {
 		private boolean finished;
 		private Result newResult;
-		private Map<String, Result> results = new HashMap<>();
+		private final Map<String, Result> results = new HashMap<>();
 		ServerSocket serverSocket;
 		private boolean shouldRun = true;
 		private StringBuilder stack;
-		private TestResult testResult;
+		private final TestResult testResult;
 		// tests completed during this session
 		private int testsRun;
 
@@ -179,58 +181,35 @@ public class SessionTestRunner {
 
 		@Override
 		public void run() {
-			Socket connection = null;
-			try {
-				// someone asked us to stop before we could do anything
+			// someone asked us to stop before we could do anything
+			if (!shouldRun()) {
+				return;
+			}
+			try (Socket s = serverSocket.accept();
+					BufferedReader messageReader = new BufferedReader(
+							new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8))) {
+				// main loop
+				while (true) {
+					synchronized (this) {
+						processAvailableMessages(messageReader);
+						if (!shouldRun()) {
+							return;
+						}
+						this.wait(150);
+					}
+				}
+			} catch (InterruptedException e) {
+				// not expected
+			} catch (IOException e) {
 				if (!shouldRun()) {
+					// we have been finished without ever getting any connections
+					// no need to throw exception
 					return;
 				}
-				try {
-					connection = serverSocket.accept();
-				} catch (SocketException se) {
-					if (!shouldRun()) {
-						// we have been finished without ever getting any connections
-						// no need to throw exception
-						return;
-					}
-					// something else stopped us
-					throw se;
-				}
-				BufferedReader messageReader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"));
-				try {
-					// main loop
-					while (true) {
-						synchronized (this) {
-							processAvailableMessages(messageReader);
-							if (!shouldRun()) {
-								return;
-							}
-							this.wait(150);
-						}
-					}
-				} catch (InterruptedException e) {
-					// not expected
-				}
-			} catch (IOException e) {
-				CoreTest.log(CoreTest.PI_HARNESS, e);
+				log(new Status(IStatus.WARNING, PI_HARNESS, IStatus.ERROR, "Error", e));
 			} finally {
 				// remember we are already finished
 				markAsFinished();
-				// cleanup
-				try {
-					if (connection != null && !connection.isClosed()) {
-						connection.close();
-					}
-				} catch (IOException e) {
-					CoreTest.log(CoreTest.PI_HARNESS, e);
-				}
-				try {
-					if (serverSocket != null && !serverSocket.isClosed()) {
-						serverSocket.close();
-					}
-				} catch (IOException e) {
-					CoreTest.log(CoreTest.PI_HARNESS, e);
-				}
 			}
 		}
 
@@ -251,7 +230,7 @@ public class SessionTestRunner {
 				try {
 					serverSocket.close();
 				} catch (IOException e) {
-					CoreTest.log(CoreTest.PI_HARNESS, e);
+					log(new Status(IStatus.ERROR, PI_HARNESS, IStatus.ERROR, "Error", e));
 				}
 				notifyAll();
 			}
@@ -316,7 +295,7 @@ public class SessionTestRunner {
 		collector.shutdown();
 		// ensure the session ran without any errors
 		if (!status.isOK()) {
-			CoreTest.log(CoreTest.PI_HARNESS, status);
+			log(status);
 			if (status.getSeverity() == IStatus.ERROR) {
 				result.addError(test, new CoreException(status));
 				return;

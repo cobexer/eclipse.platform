@@ -1,15 +1,15 @@
 /*******************************************************************************
  * Copyright (c) 2002, 2014 GEBIT Gesellschaft fuer EDV-Beratung
- * und Informatik-Technologien mbH, 
+ * und Informatik-Technologien mbH,
  * Berlin, Duesseldorf, Frankfurt (Germany) and others.
  *
- * This program and the accompanying materials 
+ * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * https://www.eclipse.org/legal/epl-2.0/
  *
  * SPDX-License-Identifier: EPL-2.0
- * 
+ *
  * Contributors:
  *     GEBIT Gesellschaft fuer EDV-Beratung und Informatik-Technologien mbH - initial implementation
  * 	   IBM Corporation - additional tests
@@ -18,11 +18,20 @@
 
 package org.eclipse.ant.tests.ui.editor;
 
+import static java.util.function.Function.identity;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
 
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
 import org.eclipse.ant.core.AntCorePlugin;
@@ -35,11 +44,13 @@ import org.eclipse.ant.internal.ui.editor.AntEditor;
 import org.eclipse.ant.tests.ui.editor.performance.EditorTestHelper;
 import org.eclipse.ant.tests.ui.editor.support.TestTextCompletionProcessor;
 import org.eclipse.ant.tests.ui.testplugin.AbstractAntUITest;
+import org.eclipse.core.internal.runtime.XmlProcessorFactory;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.TextSelection;
 import org.eclipse.jface.text.contentassist.ICompletionProposal;
 import org.eclipse.ui.PartInitException;
+import org.junit.Test;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Comment;
 import org.w3c.dom.Document;
@@ -47,32 +58,23 @@ import org.w3c.dom.Element;
 
 /**
  * Tests everything about code completion and code assistance.
- * 
  */
 @SuppressWarnings("restriction")
 public class CodeCompletionTest extends AbstractAntUITest {
 
 	/**
-	 * Constructor for CodeCompletionTest.
-	 * 
-	 * @param name
-	 */
-	public CodeCompletionTest(String name) {
-		super(name);
-	}
-
-	/**
 	 * Tests the code completion for attributes of tasks.
 	 */
+	@Test
 	public void testAttributeProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 
 		ICompletionProposal[] proposals = processor.getAttributeProposals("contains", "ca"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
-		assertEquals("casesensitive - (true | false | on | off | yes | no)", proposals[0].getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1).satisfiesExactly(it -> assertThat(it.getDisplayString())
+				.isEqualTo("casesensitive - (true | false | on | off | yes | no)")); //$NON-NLS-1$
 
 		proposals = processor.getAttributeProposals("move", ""); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(17, proposals.length);
+		assertThat(proposals).hasSize(17);
 		ICompletionProposal proposal = proposals[0];
 		String displayString = proposal.getDisplayString();
 		assertTrue(displayString.equals("id") //$NON-NLS-1$
@@ -93,30 +95,30 @@ public class CodeCompletionTest extends AbstractAntUITest {
 				|| displayString.equals("granularity")); //$NON-NLS-1$
 
 		proposals = processor.getAttributeProposals("move", "to"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(2, proposals.length);
+		assertThat(proposals).hasSize(2);
 
 		proposals = processor.getAttributeProposals("reference", "idl"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(0, proposals.length);
+		assertThat(proposals).isEmpty();
 
 		proposals = processor.getAttributeProposals("reference", "id"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
-		assertEquals("id", proposals[0].getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1).satisfiesExactly(it -> assertThat(it.getDisplayString()).isEqualTo("id")); //$NON-NLS-1$
 
 		proposals = processor.getAttributeProposals("reference", "i"); //$NON-NLS-1$ //$NON-NLS-2$
 		// id includesfile includes
-		assertEquals(3, proposals.length);
+		assertThat(proposals).hasSize(3);
 		displayString = proposals[0].getDisplayString();
 		assertTrue(displayString.equals("id") //$NON-NLS-1$
 				|| displayString.equals("includesfile") //$NON-NLS-1$
 				|| displayString.equals("includes")); //$NON-NLS-1$
 
 		proposals = processor.getAttributeProposals("project", "de"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 	}
 
 	/**
 	 * Test the code completion for properties, including unquoted (bug 40871)
 	 */
+	@Test
 	public void testPropertyProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -127,7 +129,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getPropertyProposals(getCurrentDocument(), "", lineOffset + columnNumber); //$NON-NLS-1$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("prop1", proposals); //$NON-NLS-1$
 
 		lineNumber = 18;
@@ -137,13 +139,14 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getPropertyProposals(getCurrentDocument(), "", lineOffset + columnNumber); //$NON-NLS-1$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("prop2", proposals); //$NON-NLS-1$
 	}
 
 	/**
 	 * Tests the code completion for nested elements that no templates are presented Bug 76414
 	 */
+	@Test
 	public void testPropertyTemplateProposals() throws BadLocationException, PartInitException {
 		try {
 			IFile file = getIFile("buildtest1.xml"); //$NON-NLS-1$
@@ -157,7 +160,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 			processor.setCursorPosition(lineOffset + columnNumber);
 
 			ICompletionProposal[] proposals = processor.determineTemplateProposals();
-			assertTrue("No templates are relevant at the current position. Found: " + proposals.length, proposals.length == 0); //$NON-NLS-1$
+			assertThat(proposals).isEmpty();
 		}
 		finally {
 			EditorTestHelper.closeAllEditors();
@@ -167,6 +170,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the code completion for "system" properties
 	 */
+	@Test
 	public void testSystemPropertyProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -177,13 +181,14 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getPropertyProposals(getCurrentDocument(), "", lineOffset + columnNumber); //$NON-NLS-1$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("java.home", proposals); //$NON-NLS-1$
 	}
 
 	/**
 	 * Test the code completion for "built-in" properties
 	 */
+	@Test
 	public void testBuiltInPropertyProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -194,7 +199,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getPropertyProposals(getCurrentDocument(), "", lineOffset + columnNumber); //$NON-NLS-1$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("ant.file", proposals); //$NON-NLS-1$
 		assertContains("ant.version", proposals); //$NON-NLS-1$
 		assertContains("ant.project.name", proposals); //$NON-NLS-1$
@@ -207,6 +212,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the code completion for extension point / preference properties
 	 */
+	@Test
 	public void testPreferencePropertyProposals() throws BadLocationException {
 		AntCorePreferences prefs = AntCorePlugin.getPlugin().getPreferences();
 		try {
@@ -223,7 +229,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 			processor.setColumnNumber(columnNumber);
 			processor.setCursorPosition(lineOffset + columnNumber);
 			ICompletionProposal[] proposals = processor.getPropertyProposals(getCurrentDocument(), "", lineOffset + columnNumber); //$NON-NLS-1$
-			assertTrue(proposals.length >= 3);
+			assertThat(proposals).hasSizeGreaterThanOrEqualTo(3);
 			assertContains("eclipse.home", proposals); // contributed //$NON-NLS-1$
 			assertContains("property.ui.testing2", proposals); // contributed //$NON-NLS-1$
 			assertContains("test", proposals); //$NON-NLS-1$
@@ -237,6 +243,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the code completion for the depend attribute of a target.
 	 */
+	@Test
 	public void testTargetDependProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 		// simple depends
@@ -248,7 +255,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getTargetAttributeValueProposals(getCurrentDocument(), getCurrentDocument().get(0, lineOffset
 				+ columnNumber), "", "depends"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertTrue(proposals.length == 7);
+		assertThat(proposals).hasSize(7);
 		assertContains("pretest", proposals); //$NON-NLS-1$
 		assertContains("testMoreDepends", proposals); //$NON-NLS-1$
 		// comma separated depends
@@ -260,7 +267,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getTargetAttributeValueProposals(getCurrentDocument(), getCurrentDocument().get(0, lineOffset
 				+ columnNumber), "", "depends"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertTrue(proposals.length == 7);
+		assertThat(proposals).hasSize(7);
 		assertContains("main", proposals); //$NON-NLS-1$
 		// XXX why do we not want a valid proposal?
 		/* assertDoesNotContain("pretest", proposals); */
@@ -269,6 +276,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the image for a code completion proposal for the depend attribute of a target.
 	 */
+	@Test
 	public void testTargetDependProposalImages() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest3.xml")); //$NON-NLS-1$
 		// simple depends
@@ -279,7 +287,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals(3, proposals.length);
+		assertThat(proposals).hasSize(3);
 		assertContains("main", proposals); //$NON-NLS-1$
 		assertContains("pretest", proposals); //$NON-NLS-1$
 		assertContains("test2", proposals); //$NON-NLS-1$
@@ -301,6 +309,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the image for a code completion proposal for the default attribute of a project.
 	 */
+	@Test
 	public void testProjectDefaultProposalImages() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest4.xml")); //$NON-NLS-1$
 		// simple depends
@@ -311,7 +320,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals(3, proposals.length);
+		assertThat(proposals).hasSize(3);
 		assertContains("task", proposals); //$NON-NLS-1$
 		assertContains("task2", proposals); //$NON-NLS-1$
 		assertContains("task3", proposals); //$NON-NLS-1$
@@ -333,6 +342,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the image for a code completion proposal for the target attribute of an antcall task.
 	 */
+	@Test
 	public void testAntcallTargetProposalImages() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest4.xml")); //$NON-NLS-1$
 		int lineNumber = 4;
@@ -342,7 +352,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals(2, proposals.length);
+		assertThat(proposals).hasSize(2);
 		assertContains("task", proposals); //$NON-NLS-1$
 		assertContains("task3", proposals); //$NON-NLS-1$
 
@@ -361,6 +371,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the code completion for the if attribute of a target.
 	 */
+	@Test
 	public void testTargetIfProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -372,13 +383,14 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getTargetAttributeValueProposals(getCurrentDocument(), getCurrentDocument().get(0, lineOffset
 				+ columnNumber), "", "if"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("prop1", proposals); //$NON-NLS-1$
 	}
 
 	/**
 	 * Test the code completion for the unless attribute of a target.
 	 */
+	@Test
 	public void testTargetUnlessProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -390,7 +402,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getTargetAttributeValueProposals(getCurrentDocument(), getCurrentDocument().get(0, lineOffset
 				+ columnNumber), "prop", "unless"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertTrue(proposals.length >= 1);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(1);
 		assertContains("prop1", proposals); //$NON-NLS-1$
 
 	}
@@ -398,6 +410,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test the code completion for the target attribute of antcall.
 	 */
+	@Test
 	public void testAntCallTargetProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("debugAntCall.xml")); //$NON-NLS-1$
 		int lineNumber = 4;
@@ -407,7 +420,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getAntCallAttributeValueProposals(getCurrentDocument(), "", "target"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertTrue(proposals.length == 2);
+		assertThat(proposals).hasSize(2);
 		assertContains("call", proposals); //$NON-NLS-1$
 		assertContains("pre-call", proposals); //$NON-NLS-1$
 	}
@@ -445,12 +458,13 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the property proposals for the case that they are defined in a dependent targets.
 	 */
-	public void testPropertyProposalDefinedInDependantTargets() throws FileNotFoundException {
+	@Test
+	public void testPropertyProposalDefinedInDependantTargets() throws IOException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("dependencytest.xml")); //$NON-NLS-1$
 
 		File file = getBuildFile("dependencytest.xml"); //$NON-NLS-1$
 		processor.setEditedFile(file);
-		String documentText = getFileContentAsString(file);
+		String documentText = Files.readString(file.toPath());
 
 		processor.setLineNumber(35);
 		processor.setColumnNumber(41);
@@ -469,19 +483,19 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks that have been defined in the buildfile
 	 */
+	@Test
 	public void testCustomTaskProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("taskdef.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getTaskProposals(getCurrentDocument(), "target", "min"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
-		ICompletionProposal proposal = proposals[0];
-		assertEquals("mine", proposal.getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1).satisfiesExactly(it -> assertThat(it.getDisplayString()).isEqualTo("mine")); //$NON-NLS-1$
 		processor.dispose();
 	}
 
 	/**
 	 * Tests the code completion for tasks that have been defined via the task extension point
 	 */
+	@Test
 	public void testExtensionPointTaskProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("taskdef.xml")); //$NON-NLS-1$
 		ICompletionProposal[] proposals = processor.getTaskProposals(getCurrentDocument(), "target", "cool"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -493,32 +507,34 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks that have been defined via macrodef in the buildfile
 	 */
+	@Test
 	public void testMacrodefProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("macrodef.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getTaskProposals(getCurrentDocument(), "target", "eclipsema"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
-		ICompletionProposal proposal = proposals[0];
-		assertEquals("eclipseMacro", proposal.getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1)
+				.satisfiesExactly(it -> assertThat(it.getDisplayString()).isEqualTo("eclipseMacro")); //$NON-NLS-1$
 
 	}
 
 	/**
 	 * Tests the code completion for tasks that have been defined via macrodef with uri in the buildfile
 	 */
+	@Test
 	public void testNamespacedMacrodefProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("98853.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getTaskProposals(getCurrentDocument(), "target", "xyz"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(2, proposals.length);
-		ICompletionProposal proposal = proposals[0];
-		assertEquals("xyz:echo-macro", proposal.getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(2).satisfiesExactly(
+				first -> assertThat(first.getDisplayString()).isEqualTo("xyz:echo-macro"), //$NON-NLS-1$
+				identity()::apply);
 		processor.dispose();
 	}
 
 	/**
 	 * Tests the code completion for nested element attributes
 	 */
+	@Test
 	public void testMacrodefNestedElementAttributeProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("macrodef.xml")); //$NON-NLS-1$
 		int lineNumber = 5;
@@ -528,7 +544,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals(proposals.length, 5);
+		assertThat(proposals).hasSize(5);
 		assertContains(IAntCoreConstants.DESCRIPTION, proposals);
 		assertContains("implicit - (true | false | on | off | yes | no)", proposals); //$NON-NLS-1$
 		assertContains(IAntCoreConstants.NAME, proposals);
@@ -538,6 +554,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks that have been defined via macrodef in the buildfile
 	 */
+	@Test
 	public void testMacrodefAttributeProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("macrodef.xml")); //$NON-NLS-1$
 		int lineNumber = 12;
@@ -547,7 +564,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 2);
+		assertThat(proposals).hasSize(2);
 		assertContains("v", proposals); //$NON-NLS-1$
 		assertContains("eclipse", proposals); //$NON-NLS-1$
 		assertTrue("Additional proposal information not correct", proposals[1].getAdditionalProposalInfo().startsWith("Testing Eclipse")); //$NON-NLS-1$ //$NON-NLS-2$
@@ -557,6 +574,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks that have been defined via macrodef in the buildfile
 	 */
+	@Test
 	public void testNamespacedMacrodefAttributeProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("98853.xml")); //$NON-NLS-1$
 		int lineNumber = 16;
@@ -566,7 +584,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals("There should be one completion proposal", proposals.length, 1); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1);
 		assertContains("str", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
@@ -574,6 +592,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for elements that have been defined via macrodef in the buildfile
 	 */
+	@Test
 	public void testMacrodefElementProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("macrodef.xml")); //$NON-NLS-1$
 		int lineNumber = 13;
@@ -583,7 +602,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals("There should be 1 completion proposal", proposals.length, 1); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1);
 		assertTrue("Proposal not correct", proposals[0].getDisplayString().equals("some-tasks")); //$NON-NLS-1$ //$NON-NLS-2$
 		assertTrue("Additional proposal information not correct", proposals[0].getAdditionalProposalInfo().endsWith("Not required")); //$NON-NLS-1$ //$NON-NLS-2$
 		processor.dispose();
@@ -592,30 +611,32 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks having parent tasks.
 	 */
+	@Test
 	public void testTaskProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getTaskProposals("         <", "rename", ""); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		assertEquals(0, proposals.length);
+		assertThat(proposals).isEmpty();
 
 		proposals = processor.getTaskProposals("       <cl", "property", "cl"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 		ICompletionProposal proposal = proposals[0];
 		assertEquals("classpath", proposal.getDisplayString()); //$NON-NLS-1$
 
 		proposals = processor.getTaskProposals("       <pr", "property", ""); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 		proposal = proposals[0];
 		assertEquals("classpath", proposal.getDisplayString()); //$NON-NLS-1$
 
 		// "<project><target><mk"
 		proposals = processor.getTaskProposals("<project><target><mk", "target", "mk"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 		proposal = proposals[0];
 		assertEquals("mkdir", proposal.getDisplayString()); //$NON-NLS-1$
 		processor.dispose();
 	}
 
+	@Test
 	public void testTargetTemplateProposals() throws BadLocationException, PartInitException {
 		try {
 			IFile file = getIFile("buildtest1.xml"); //$NON-NLS-1$
@@ -655,11 +676,12 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for the fail task bug 73637
 	 */
+	@Test
 	public void testFailProposals() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getAttributeProposals("fail", ""); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(6, proposals.length);
+		assertThat(proposals).hasSize(6);
 
 		assertContains("message", proposals); //$NON-NLS-1$
 		assertContains("if", proposals); //$NON-NLS-1$
@@ -670,17 +692,18 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Test for bug 40951
 	 */
+	@Test
 	public void testMixedElements() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("mixed.xml")); //$NON-NLS-1$
 		// String string = "<project><target><sql driver=\"\" password=\"\" url=\"\" userid=\"\"></sql><concat></concat>";
 		ICompletionProposal[] proposals = processor.getTaskProposals(getCurrentDocument(), processor.getParentName(getCurrentDocument(), 0, 62), "t"); //$NON-NLS-1$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 		ICompletionProposal proposal = proposals[0];
 		assertEquals("transaction", proposal.getDisplayString()); //$NON-NLS-1$
 
 		proposals = processor.getTaskProposals(getCurrentDocument(), processor.getParentName(getCurrentDocument(), 0, 76), ""); //$NON-NLS-1$
 		// filelist fileset filterchain footer header path
-		assertEquals(6, proposals.length);
+		assertThat(proposals).hasSize(6);
 		proposal = proposals[0];
 		assertEquals("filelist", proposal.getDisplayString()); //$NON-NLS-1$
 		processor.dispose();
@@ -689,10 +712,11 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the algorithm for finding a child as used by the processor.
 	 */
+	@Test
 	public void testFindChildElement() throws ParserConfigurationException {
 
 		// Create the test data
-		DocumentBuilder docBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+		DocumentBuilder docBuilder = XmlProcessorFactory.createDocumentBuilderWithErrorOnDOCTYPE();
 		Document doc = docBuilder.newDocument();
 		Element parentElement = doc.createElement("parent"); //$NON-NLS-1$
 		Attr attribute = doc.createAttribute("att1"); //$NON-NLS-1$
@@ -718,6 +742,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests that the processor correctly determines the attribute proposal mode
 	 */
+	@Test
 	public void testDeterminingAttributeProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 		int mode = processor.determineProposalMode("<project><property ta", 21, "ta"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -737,6 +762,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests that the processor correctly determines the attribute value proposal mode
 	 */
+	@Test
 	public void testDeterminingAttributeValueProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 		int mode = processor.determineProposalMode("<project><property take=\"", 25, ""); //$NON-NLS-1$ //$NON-NLS-2$
@@ -752,6 +778,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests how the processor determines the proposal mode.
 	 */
+	@Test
 	public void testDeterminingPropertyProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 		int mode = processor.determineProposalMode("<project><target name=\"$\"", 24, ""); //$NON-NLS-1$ //$NON-NLS-2$
@@ -768,6 +795,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests how the processor determines the proposal mode.
 	 */
+	@Test
 	public void testDeterminingTaskProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 
@@ -804,6 +832,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests how the processor determines the proposal mode.
 	 */
+	@Test
 	public void testDeterminingTaskClosingProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 
@@ -814,6 +843,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests how the prefix will be determined.
 	 */
+	@Test
 	public void testDeterminingPrefix() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 
@@ -843,6 +873,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests how the processor determines the proposal mode.
 	 */
+	@Test
 	public void testDeterminingNoneProposalMode() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor();
 
@@ -855,24 +886,25 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for tasks in an empty build file (no parent).
 	 */
+	@Test
 	public void testTaskProposalsForEmptyBuildFile() {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("empty.xml")); //$NON-NLS-1$
 
 		ICompletionProposal[] proposals = processor.getBuildFileProposals("", ""); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
-		assertEquals("project", proposals[0].getDisplayString()); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1).satisfiesExactly(it -> assertThat(it.getDisplayString()).isEqualTo("project")); //$NON-NLS-1$
 
 		proposals = processor.getBuildFileProposals("            jl", "jl"); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(0, proposals.length);
+		assertThat(proposals).isEmpty();
 
 		proposals = processor.getBuildFileProposals("    \n<project></project>", ""); //$NON-NLS-1$ //$NON-NLS-2$
-		assertEquals(1, proposals.length);
+		assertThat(proposals).hasSize(1);
 		processor.dispose();
 	}
 
 	/**
 	 * Tests the code completion for refids (Bug 49830)
 	 */
+	@Test
 	public void testRefidProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("refid.xml")); //$NON-NLS-1$
 
@@ -885,7 +917,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// for sure should have project.class.path and project.class.path2 but project.class.path2
 		// should not present itself as a possible reference
-		assertTrue(proposals.length >= 2);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(2);
 		assertContains("project.class.path", proposals); //$NON-NLS-1$
 		assertDoesNotContain("project.class.path2", proposals); //$NON-NLS-1$
 		processor.dispose();
@@ -894,19 +926,19 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for custom task that has a boolean attribute
 	 */
+	@Test
 	public void testCustomBooleanProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("customBoolean.xml")); //$NON-NLS-1$
 
 		int lineNumber = 2;
-		int columnNumber = 44;
+		int columnNumber = 45;
 		int lineOffset = getCurrentDocument().getLineOffset(lineNumber);
 		processor.setLineNumber(lineNumber);
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// true false yes no on off
-		System.out.println("Proposals length:" + proposals.length); //$NON-NLS-1$
-		assertTrue(proposals.length == 6);
+		assertThat(proposals).hasSize(6);
 		assertContains("true", proposals); //$NON-NLS-1$
 		assertContains("no", proposals); //$NON-NLS-1$
 		processor.dispose();
@@ -915,6 +947,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for custom task that has an enumerated attribute
 	 */
+	@Test
 	public void testCustomEnumeratedProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("extensionPointTaskSepVM.xml")); //$NON-NLS-1$
 		int lineNumber = 2;
@@ -924,7 +957,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), "c"); //$NON-NLS-1$
-		assertEquals("Incorrect number of proposals", 2, proposals.length); //$NON-NLS-1$
+		assertThat(proposals).hasSize(2);
 		assertContains("cool", proposals); //$NON-NLS-1$
 		assertContains("chillin", proposals); //$NON-NLS-1$
 		assertDoesNotContain("awesome", proposals); //$NON-NLS-1$
@@ -934,6 +967,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for custom task that have a reference attribute
 	 */
+	@Test
 	public void testCustomReferenceProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("extensionPointTaskSepVM.xml")); //$NON-NLS-1$
 		int lineNumber = 2;
@@ -943,7 +977,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), "e"); //$NON-NLS-1$
-		assertEquals("Incorrect number of proposals", 1, proposals.length); //$NON-NLS-1$
+		assertThat(proposals).hasSize(1);
 		// the reference to the project by name
 		assertContains("Extension Point Task", proposals); //$NON-NLS-1$
 		processor.dispose();
@@ -952,6 +986,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for nested element attributes of custom tasks
 	 */
+	@Test
 	public void testNestedElementAttributeProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("nestedElementAttributes.xml")); //$NON-NLS-1$
 		int lineNumber = 4;
@@ -961,7 +996,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 1);
+		assertThat(proposals).hasSize(1);
 		assertContains("works", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
@@ -969,6 +1004,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for nested elements
 	 */
+	@Test
 	public void testNestedElementProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("nestedElementAttributes.xml")); //$NON-NLS-1$
 		int lineNumber = 4;
@@ -978,7 +1014,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 1);
+		assertThat(proposals).hasSize(1);
 		assertContains("nestedelement", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
@@ -986,6 +1022,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for nested elements that no templates are presented Bug 76414
 	 */
+	@Test
 	public void testNestedElementTemplateProposals() throws BadLocationException, PartInitException {
 		try {
 			IFile file = getIFile("nestedElementAttributes.xml"); //$NON-NLS-1$
@@ -998,7 +1035,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 
 			ICompletionProposal[] proposals = processor.computeCompletionProposals(lineOffset);
 
-			assertTrue("No templates are relevant at the current position. Found: " + proposals.length, proposals.length == 1); //$NON-NLS-1$
+			assertThat(proposals).hasSize(1);
 		}
 		finally {
 			EditorTestHelper.closeAllEditors();
@@ -1008,6 +1045,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for nested element attribute values of custom tasks
 	 */
+	@Test
 	public void testNestedElementAttributeValueProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("nestedElementAttributes.xml")); //$NON-NLS-1$
 		int lineNumber = 4;
@@ -1017,7 +1055,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertEquals("There should be 6 completion proposals", proposals.length, 6); //$NON-NLS-1$
+		assertThat(proposals).hasSize(6);
 		assertContains("true", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
@@ -1025,6 +1063,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion when a parse error occurs in the project definition bug 63151
 	 */
+	@Test
 	public void testBadProjectProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("badproject.xml")); //$NON-NLS-1$
 		int lineNumber = 0;
@@ -1034,7 +1073,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), "n"); //$NON-NLS-1$
-		assertTrue(proposals.length == 1);
+		assertThat(proposals).hasSize(1);
 		assertContains(IAntCoreConstants.NAME, proposals);
 		processor.dispose();
 	}
@@ -1042,6 +1081,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for attribute value proposals both with and without leading whitespace
 	 */
+	@Test
 	public void testAttributeValueProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("javac.xml")); //$NON-NLS-1$
 		int lineNumber = 2;
@@ -1051,7 +1091,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 6); // boolean proposals
+		assertThat(proposals).hasSize(6);
 		assertContains("false", proposals); //$NON-NLS-1$
 
 		lineNumber = 3;
@@ -1061,7 +1101,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 6); // boolean proposals
+		assertThat(proposals).hasSize(6);
 		assertContains("true", proposals); //$NON-NLS-1$
 
 		lineNumber = 4;
@@ -1071,7 +1111,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 6); // boolean proposals
+		assertThat(proposals).hasSize(6);
 		assertContains("no", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
@@ -1079,6 +1119,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for an empty buildfile
 	 */
+	@Test
 	public void testEmptyBuildfileProposals() throws PartInitException {
 		try {
 			IFile file = getIFile("empty.xml"); //$NON-NLS-1$
@@ -1088,7 +1129,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 			editor.getSelectionProvider().setSelection(TextSelection.emptySelection());
 
 			ICompletionProposal[] proposals = processor.computeCompletionProposals(0);
-			assertTrue("Four proposals are relevant at the current position. Found: " + proposals.length, proposals.length == 4); //$NON-NLS-1$
+			assertThat(proposals).hasSize(4);
 			assertContains("project", proposals); //$NON-NLS-1$
 			assertContains("Buildfile template - simple buildfile with two targets", proposals); //$NON-NLS-1$
 			processor.dispose();
@@ -1101,6 +1142,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for refids (Bug 65480)
 	 */
+	@Test
 	public void testJavacReferencesProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("refid.xml")); //$NON-NLS-1$
 
@@ -1112,7 +1154,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// for sure should have project.class.path and project.class.path2
-		assertTrue(proposals.length >= 2);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(2);
 		assertContains("project.class.path", proposals); //$NON-NLS-1$
 		assertContains("project.class.path2", proposals); //$NON-NLS-1$
 
@@ -1124,7 +1166,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// for sure should have project.class.path and project.class.path2
-		assertTrue(proposals.length >= 2);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(2);
 		assertContains("project.class.path", proposals); //$NON-NLS-1$
 		assertContains("project.class.path2", proposals); //$NON-NLS-1$
 
@@ -1136,7 +1178,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// for sure should have project.class.path and project.class.path2
-		assertTrue(proposals.length >= 2);
+		assertThat(proposals).hasSizeGreaterThanOrEqualTo(2);
 		assertContains("project.class.path", proposals); //$NON-NLS-1$
 		assertContains("project.class.path2", proposals); //$NON-NLS-1$
 		processor.dispose();
@@ -1145,6 +1187,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for the default target of a project (Bug 78030)
 	 */
+	@Test
 	public void testProjectDefaultProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -1156,7 +1199,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// includes all the public targets
-		assertTrue(proposals.length == 8);
+		assertThat(proposals).hasSize(8);
 		assertContains("main", proposals); //$NON-NLS-1$
 		assertContains("testUnless", proposals); //$NON-NLS-1$
 		processor.dispose();
@@ -1165,6 +1208,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 	/**
 	 * Tests the code completion for project attributes (bug 82031)
 	 */
+	@Test
 	public void testProjectAttributeProposals() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("buildtest1.xml")); //$NON-NLS-1$
 
@@ -1176,7 +1220,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
 		// includes all the project attributes
-		assertTrue(proposals.length == 3);
+		assertThat(proposals).hasSize(3);
 		assertContains(IAntCoreConstants.NAME, proposals);
 		assertContains("default", proposals); //$NON-NLS-1$
 		assertContains("basedir", proposals); //$NON-NLS-1$
@@ -1187,11 +1231,12 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		proposals = processor.getProposalsFromDocument(getCurrentDocument(), "n"); //$NON-NLS-1$
-		assertTrue(proposals.length == 1);
+		assertThat(proposals).hasSize(1);
 		assertContains(IAntCoreConstants.NAME, proposals);
 		processor.dispose();
 	}
 
+	@Test
 	public void testExtensionPoint() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("antextpoint1.xml")); //$NON-NLS-1$
 
@@ -1202,11 +1247,12 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), "ext"); //$NON-NLS-1$
-		assertTrue(proposals.length == 3);
+		assertThat(proposals).hasSize(3);
 		assertContains("extension-point", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}
 
+	@Test
 	public void testExtensionOf() throws BadLocationException {
 		TestTextCompletionProcessor processor = new TestTextCompletionProcessor(getAntModel("antextpoint2.xml")); //$NON-NLS-1$
 
@@ -1217,7 +1263,7 @@ public class CodeCompletionTest extends AbstractAntUITest {
 		processor.setColumnNumber(columnNumber);
 		processor.setCursorPosition(lineOffset + columnNumber);
 		ICompletionProposal[] proposals = processor.getProposalsFromDocument(getCurrentDocument(), ""); //$NON-NLS-1$
-		assertTrue(proposals.length == 1);
+		assertThat(proposals).hasSize(1);
 		assertContains("ep-B", proposals); //$NON-NLS-1$
 		processor.dispose();
 	}

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corporation and others.
+ * Copyright (c) 2000, 2023 IBM Corporation and others.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
@@ -43,7 +43,7 @@ import org.eclipse.team.examples.filesystem.subscriber.FileSystemSubscriber;
 public class FileSystemOperations {
 
 	// A reference to the provider
-	private FileSystemProvider provider;
+	private final FileSystemProvider provider;
 
 	FileSystemOperations(FileSystemProvider provider) {
 		this.provider = provider;
@@ -57,7 +57,6 @@ public class FileSystemOperations {
 	 * @param depth the depth of the operation
 	 * @param overrideOutgoing whether locally modified resources should be replaced
 	 * @param progress a progress monitor
-	 * @throws TeamException
 	 */
 	public void get(IResource[] resources, int depth, boolean overrideOutgoing, IProgressMonitor progress) throws TeamException {
 		try {
@@ -78,8 +77,7 @@ public class FileSystemOperations {
 	 * files should also be replaced or left alone.
 	 * @param traversals the traversals that cover the resources to get
 	 * @param overrideOutgoing whether locally modified resources should be replaced
-	 * @param progress a progress monitor
-	 * @throws TeamException
+	 * @param monitor a progress monitor
 	 */
 	public void get(ResourceTraversal[] traversals, boolean overrideOutgoing, IProgressMonitor monitor) throws TeamException {
 		try {
@@ -100,7 +98,6 @@ public class FileSystemOperations {
 	 * @param resources the resources to be checked out
 	 * @param depth the depth of the checkout
 	 * @param progress a progress monitor
-	 * @throws TeamException
 	 */
 	public void checkout(IResource[] resources, int depth, IProgressMonitor progress) throws TeamException {
 		try {
@@ -131,7 +128,6 @@ public class FileSystemOperations {
 	 * @param depth the depth of the operation
 	 * @param overrideIncoming indicate whether incoming remote changes should be replaced
 	 * @param progress a progress monitor
-	 * @throws TeamException
 	 */
 	public void checkin(IResource[] resources, int depth, boolean overrideIncoming, IProgressMonitor progress) throws TeamException {
 		try {
@@ -151,8 +147,7 @@ public class FileSystemOperations {
 	 * contents with the local workspace contents.
 	 * @param traversals the traversals that cover the resources to check in
 	 * @param overrideIncoming indicate whether incoming remote changes should be replaced
-	 * @param progress a progress monitor
-	 * @throws TeamException
+	 * @param monitor a progress monitor
 	 */
 	public void checkin(ResourceTraversal[] traversals, boolean overrideIncoming, IProgressMonitor monitor) throws TeamException {
 		try {
@@ -313,7 +308,6 @@ public class FileSystemOperations {
 	 * @param overrideIncoming whether incoming changes should be overwritten
 	 * @param progress a progress monitor
 	 * @return whether the put succeeded (i.e. the local matches the remote)
-	 * @throws TeamException
 	 */
 	private boolean internalPut(IFile localFile, boolean overrideIncoming, IProgressMonitor progress) throws TeamException {
 		ThreeWaySynchronizer synchronizer = FileSystemSubscriber.getInstance().getSynchronizer();
@@ -356,25 +350,15 @@ public class FileSystemOperations {
 			synchronizer.flush(localFile, IResource.DEPTH_ZERO);
 		} else {
 			// Otherwise, upload the contents
-			try {
-				//Copy from the local file to the remote file:
-				InputStream in = null;
-				FileOutputStream out = null;
-				try {
-					if(! diskFile.getParentFile().exists()) {
-						diskFile.getParentFile().mkdirs();
-					}
-					in = localFile.getContents();
-					out = new FileOutputStream(diskFile);
+			try (InputStream in = localFile.getContents()) {
+				if (!diskFile.getParentFile().exists()) {
+					diskFile.getParentFile().mkdirs();
+				}
+				try (FileOutputStream out = new FileOutputStream(diskFile)) {
 					//Copy the contents of the local file to the remote file:
 					StreamUtil.pipe(in, out, diskFile.length(), progress, diskFile.getName());
 					// Mark the file as read-only to require another checkout
 					localFile.setReadOnly(true);
-				} finally {
-					if (in != null)
-						in.close();
-					if (out != null)
-						out.close();
 				}
 				// Update the synchronizer base bytes
 				remote = getResourceVariant(localFile);
